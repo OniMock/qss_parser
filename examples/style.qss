@@ -1,0 +1,5 @@
+#myButton { background-color: #4CAF50; color: white; font: bold 14px "Arial"; border-radius: 5px; padding: 10px; }
+
+#myButton:hover { background-color: #45a049; }
+
+QLabel { color: #333; font: 12px "Segoe UI"; background-color: #f0f0f0; padding: 5px; }
