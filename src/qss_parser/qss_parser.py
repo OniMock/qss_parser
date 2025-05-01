@@ -1,5 +1,6 @@
-from typing import List, Optional, Set
+from typing import List, Optional
 import re
+
 
 class QSSProperty:
     def __init__(self, name: str, value: str):
@@ -29,8 +30,10 @@ class QSSRule:
         Initialize a QSS rule with a selector and optional original text.
 
         Args:
-            selector (str): The CSS selector for the rule (e.g., '#myButton', 'QPushButton').
-            original (Optional[str]): The original QSS text for the rule, if provided.
+            selector (str): The CSS selector for the rule
+            (e.g., '#myButton', 'QPushButton').
+            original (Optional[str]): The original QSS text
+            for the rule, if provided.
         """
         self.selector = selector.strip()
         self.properties: List[QSSProperty] = []
@@ -127,8 +130,7 @@ class QSSRule:
         """
         if not isinstance(other, QSSRule):
             return False
-        return (self.selector == other.selector and
-                self.properties == other.properties)
+        return self.selector == other.selector and self.properties == other.properties
 
 
 class QSSParser:
@@ -184,7 +186,6 @@ class QSSParser:
         in_rule = False
         open_braces = 0
         current_selector = ""
-        selector_line_num = 0
         last_line_num = 0
         property_buffer = ""
 
@@ -213,22 +214,26 @@ class QSSParser:
                             f"Error on line {line_num}: Closing brace '}}' without matching '{{': {line}"
                         )
                     else:
-                        errors.extend(self._validate_pending_properties(property_buffer, line_num - 1))
+                        errors.extend(
+                            self._validate_pending_properties(
+                                property_buffer, line_num - 1
+                            )
+                        )
                         property_buffer = ""
                         open_braces -= 1
                         in_rule = open_braces > 0
                         if not in_rule:
                             current_selector = ""
-                            selector_line_num = 0
                     continue
 
                 if line.endswith("{"):
-                    errors.extend(self._validate_pending_properties(property_buffer, line_num - 1))
+                    errors.extend(
+                        self._validate_pending_properties(property_buffer, line_num - 1)
+                    )
                     property_buffer = ""
                     new_errors, selector = self._validate_selector(line, line_num)
                     errors.extend(new_errors)
                     current_selector = selector
-                    selector_line_num = line_num
                     open_braces += 1
                     in_rule = True
                     last_line_num = line_num
@@ -244,7 +249,6 @@ class QSSParser:
                     new_errors, selector = self._validate_selector(line, line_num)
                     errors.extend(new_errors)
                     current_selector = selector
-                    selector_line_num = line_num
                     open_braces += 1
                     in_rule = True
                     last_line_num = line_num
@@ -263,9 +267,11 @@ class QSSParser:
                             f"Error on line {line_num}: Selector without opening brace '{{': {line}"
                         )
 
-        errors.extend(self._finalize_validation(
-            open_braces, current_selector, property_buffer, last_line_num
-        ))
+        errors.extend(
+            self._finalize_validation(
+                open_braces, current_selector, property_buffer, last_line_num
+            )
+        )
 
         return errors
 
@@ -279,7 +285,7 @@ class QSSParser:
         Returns:
             bool: True if the line is a complete QSS rule, False otherwise.
         """
-        return bool(re.match(r'^\s*[^/][^{}]*\s*\{[^}]*\}\s*$', line))
+        return bool(re.match(r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$", line))
 
     def _validate_complete_rule(self, line: str, line_num: int) -> List[str]:
         """
@@ -294,7 +300,7 @@ class QSSParser:
         """
         errors = []
         # Extract selector and properties
-        match = re.match(r'^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$', line)
+        match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
         if not match:
             return [f"Error on line {line_num}: Malformed rule: {line}"]
 
@@ -309,12 +315,18 @@ class QSSParser:
                 part = part.strip()
                 if part:
                     if ":" not in part or part.endswith(":"):
-                        errors.append(f"Error on line {line_num}: Malformed property: {part}")
+                        errors.append(
+                            f"Error on line {line_num}: Malformed property: {part}"
+                        )
                     elif not part.split(":", 1)[1].strip():
-                        errors.append(f"Error on line {line_num}: Property missing value: {part}")
+                        errors.append(
+                            f"Error on line {line_num}: Property missing value: {part}"
+                        )
             last_part = prop_parts[-1].strip()
             if last_part and not last_part.endswith(";"):
-                errors.append(f"Error on line {line_num}: Property missing ';': {last_part}")
+                errors.append(
+                    f"Error on line {line_num}: Property missing ';': {last_part}"
+                )
 
         return errors
 
@@ -330,12 +342,12 @@ class QSSParser:
         """
         # Exclude lines that are complete rules, properties, or comments
         return (
-            not self._is_complete_rule(line) and
-            not self._is_property_line(line) and
-            not line.startswith("/*") and
-            not "*/" in line and
-            not line == "}" and
-            bool(re.match(r'^\s*[^/][^{};]*\s*$', line))
+            not self._is_complete_rule(line)
+            and not self._is_property_line(line)
+            and not line.startswith("/*")
+            and "*/" not in line
+            and not line == "}"
+            and bool(re.match(r"^\s*[^/][^{};]*\s*$", line))
         )
 
     # [Rest of the methods unchanged]
@@ -383,7 +395,9 @@ class QSSParser:
         """
         return ":" in line and ";" in line
 
-    def _process_property_line_for_format(self, line: str, buffer: str, line_num: int) -> tuple[str, List[str]]:
+    def _process_property_line_for_format(
+        self, line: str, buffer: str, line_num: int
+    ) -> tuple[str, List[str]]:
         """
         Process a property line for format validation, accumulating in the buffer and checking for semicolons.
 
@@ -512,7 +526,9 @@ class QSSParser:
             return
         if self._in_rule and self._current_rules:
             if ";" in line:
-                full_line = (self._buffer + " " + line).strip() if self._buffer else line
+                full_line = (
+                    (self._buffer + " " + line).strip() if self._buffer else line
+                )
                 self._buffer = ""
                 parts = full_line.split(";")
                 for part in parts[:-1]:
@@ -530,7 +546,7 @@ class QSSParser:
         Args:
             line (str): The line containing the complete rule.
         """
-        match = re.match(r'^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$', line)
+        match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
         if not match:
             return
         selector, properties = match.groups()
@@ -589,19 +605,39 @@ class QSSParser:
                 for prop in rule.properties:
                     if prop.name not in existing_prop_names:
                         existing_rule.properties.append(prop)
-                existing_rule.original = f"{existing_rule.selector} {{\n" + \
-                    "\n".join(
-                        f"    {p.name}: {p.value};" for p in existing_rule.properties) + "\n}\n"
+                existing_rule.original = (
+                    f"{existing_rule.selector} {{\n"
+                    + "\n".join(
+                        f"    {p.name}: {p.value};" for p in existing_rule.properties
+                    )
+                    + "\n}\n"
+                )
                 return
         self.rules.append(rule)
-        if ":" in rule.selector and "::" not in rule.selector and "," not in rule.selector:
+        if (
+            ":" in rule.selector
+            and "::" not in rule.selector
+            and "," not in rule.selector
+        ):
             base_rule = rule.clone_without_pseudo_elements()
-            base_rule_tuple = (base_rule.selector, tuple((p.name, p.value) for p in base_rule.properties))
-            existing_rules = [(r.selector, tuple((p.name, p.value) for p in r.properties)) for r in self.rules]
+            base_rule_tuple = (
+                base_rule.selector,
+                tuple((p.name, p.value) for p in base_rule.properties),
+            )
+            existing_rules = [
+                (r.selector, tuple((p.name, p.value) for p in r.properties))
+                for r in self.rules
+            ]
             if base_rule_tuple not in existing_rules:
                 self.rules.append(base_rule)
 
-    def get_styles_for(self, widget, fallback_class: Optional[str] = None, additional_selectors: Optional[List[str]] = None, include_class_if_object_name: bool = False) -> str:
+    def get_styles_for(
+        self,
+        widget,
+        fallback_class: Optional[str] = None,
+        additional_selectors: Optional[List[str]] = None,
+        include_class_if_object_name: bool = False,
+    ) -> str:
         """
         Retrieve QSS styles for a given widget.
 

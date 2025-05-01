@@ -19,3 +19,6 @@ dependencies = []
 [project.urls]
 "Homepage" = "https://github.com/OniMock/qss_parser"
 "Bug Tracker" = "https://github.com/OniMock/qss_parser/issues"
+
+[tool.black]
+line-length = 88

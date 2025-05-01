@@ -1,1 +1,1 @@
-from .test_qss_parser import TestQSSParser
+from .test_qss_parser import TestQSSParser  # noqa: F401
