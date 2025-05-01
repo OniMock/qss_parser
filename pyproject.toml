@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qss-parser"
+version = "0.1.0"
+authors = [{ name = "Onimock", email = "onimock@gmail.com" }]
+description = "A parser Python to Qt Style Sheets (QSS)"
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/OniMock/qss_parser"
+"Bug Tracker" = "https://github.com/OniMock/qss_parser/issues"
