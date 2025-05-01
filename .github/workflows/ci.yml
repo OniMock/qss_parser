@@ -1,11 +1,12 @@
+---
 name: CI and Release
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -13,187 +14,168 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ "3.8", "3.9", "3.10", "3.11", "3.12" ]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: pip
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
 
-    - name: Run linters
-      run: |
-        pip install flake8 black
-        flake8 src tests
-        black --check src tests
+      - name: Run linters
+        run: |
+          pip install flake8 black
+          flake8 src tests
+          black --check src tests
 
-    - name: Run tests with coverage
-      run: |
-        pip install pytest pytest-cov
-        pytest tests --cov=src --cov-report=xml
-      env:
-        PYTHONPATH: src
+      - name: Run tests with coverage
+        run: |
+          pip install pytest pytest-cov
+          pytest tests --cov=src --cov-report=xml
+        env:
+          PYTHONPATH: src
 
-    - name: Upload coverage report
-      uses: codecov/codecov-action@v4
-      with:
-        file: coverage.xml
-      if: matrix.python-version == '3.12'
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+        if: matrix.python-version == '3.12'
 
   release:
     needs: test
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        cache: pip
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install tomlkit build twine
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install tomlkit build twine
 
-    - name: Extract version from tag
-      id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-      if: github.event_name != 'workflow_dispatch'
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+        if: github.event_name != 'workflow_dispatch'
 
-    - name: Set version for manual dispatch
-      id: set_version
-      run: |
-        echo "VERSION=$(python -c "import tomlkit; print(tomlkit.parse(open('pyproject.toml').read())['project']['version'])")" >> $GITHUB_ENV
-      if: github.event_name == 'workflow_dispatch'
+      - name: Set version for manual dispatch
+        id: set_version
+        run: |
+          echo "VERSION=$(python -c "import tomlkit; print(tomlkit.parse(open('pyproject.toml').read())['project']['version'])")" >> $GITHUB_ENV
+        if: github.event_name == 'workflow_dispatch'
 
-    - name: Verify version consistency
-      run: |
-        PYPROJECT_VERSION=$(python -c "import tomlkit; print(tomlkit.parse(open('pyproject.toml').read())['project']['version'])")
-        INIT_VERSION=$(python -c "from src.qss_parser import __version__; print(__version__)")
-        if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
-          echo "Error: Versions mismatch - pyproject.toml: $PYPROJECT_VERSION, __init__.py: $INIT_VERSION"
-          exit 1
-        fi
+      - name: Verify version consistency
+        run: |
+          PYPROJECT_VERSION=$(python -c "import tomlkit; print(tomlkit.parse(open('pyproject.toml').read())['project']['version'])")
+          INIT_VERSION=$(python -c "from src.qss_parser import __version__; print(__version__)")
+          if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
+            echo "Error: Versions mismatch - pyproject.toml: $PYPROJECT_VERSION, __init__.py: $INIT_VERSION"
+            exit 1
+          fi
 
-    - name: Update versions
-      run: python update_version.py ${{ env.VERSION }}
+      - name: Update versions
+        run: python update_version.py ${{ env.VERSION }}
 
-    - name: Generate release notes
-      id: generate_notes
-      run: |
-        LAST_TAG=$(git describe --tags --abbrev=0 ${GITHUB_REF#refs/tags/}^ 2>/dev/null || echo "")
-        COMMIT_RANGE="${LAST_TAG:+${LAST_TAG}..}${GITHUB_REF#refs/tags/}"
-        NOTES=""
-        while IFS='|' read -r COMMIT_MSG COMMIT_HASH; do
-          ISSUES=$(echo "$COMMIT_MSG" | grep -o '#[0-9]\+' || true)
-          for ISSUE in $ISSUES; do
-            ISSUE_NUM=${ISSUE/#}
-            COMMIT_MSG=$(echo "$COMMIT_MSG" | sed "s|$ISSUE|[#$ISSUE_NUM](https://github.com/${{ github.repository }}/issues/$ISSUE_NUM)|g")
-          done
-          NOTES="${NOTES}- $COMMIT_MSG ([${COMMIT_HASH:0:7}](https://github.com/${{ github.repository }}/commit/$COMMIT_HASH))\n"
-        done < <(git log "$COMMIT_RANGE" --pretty=format:"%s|%H" --no-merges)
-        CURRENT_DATE=$(date +%Y-%m-%d)
-        cat << EOF > release_notes.md
-          qss-parser v${{ env.VERSION }}
+      - name: Generate release notes
+        id: generate_notes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 ${GITHUB_REF#refs/tags/}^ 2>/dev/null || echo "")
+          COMMIT_RANGE="${LAST_TAG:+${LAST_TAG}..}${GITHUB_REF#refs/tags/}"
+          NOTES=""
+          while IFS='|' read -r COMMIT_MSG COMMIT_HASH; do
+            # Optional: Enable this filter to skip gibberish commit messages
+            # if [[ "$COMMIT_MSG" =~ ^[A-Za-z0-9[:space:]]+$ && ! "$COMMIT_MSG" =~ ^[a-z]{5,}$ ]]; then
+              ISSUES=$(echo "$COMMIT_MSG" | grep -o '#[0-9]\+' || true)
+              for ISSUE in $ISSUES; do
+                ISSUE_NUM=${ISSUE/#}
+                COMMIT_MSG=$(echo "$COMMIT_MSG" | sed "s|$ISSUE|[#$ISSUE_NUM](https://github.com/${{ github.repository }}/issues/$ISSUE_NUM)|g")
+              done
+              NOTES="${NOTES}- $COMMIT_MSG ([${COMMIT_HASH:0:7}](https://github.com/${{ github.repository }}/commit/$COMMIT_HASH))\n"
+            # fi
+          done < <(git log "$COMMIT_RANGE" --pretty=format:"%s|%H" --no-merges)
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          curl -s -o generate_release_notes.sh https://raw.githubusercontent.com/OniMock/.github/main/.templates/generate_release_notes.sh
+          chmod +x generate_release_notes.sh
+          FORMATTED_NOTES=$(echo -e "$NOTES")
+          ./generate_release_notes.sh "$CURRENT_DATE" "${{ env.VERSION }}" "$FORMATTED_NOTES"
 
-          ## Overview
-          Version ${{ env.VERSION }} of qss-parser.
+      - name: Update or create CHANGELOG.md
+        run: |
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          VERSION=${{ env.VERSION }}
+          FORMATTED_NOTES=$(sed 's/^## Overview/### Overview/' release_notes.md)
+          curl -s -o generate_changelog.sh https://raw.githubusercontent.com/OniMock/.github/main/.templates/generate_changelog.sh
+          chmod +x generate_changelog.sh
+          ./generate_changelog.sh "$CURRENT_DATE" "$VERSION" "$FORMATTED_NOTES" "CHANGELOG.md"
 
-          ## Changes
-          $NOTES
-          ## Installation
-          \`\`\`bash
-          pip install qss-parser==${{ env.VERSION }}
-          \`\`\`
+      - name: Commit changes
+        run: |
+          git config user.name "OniBot"
+          git config user.email "onimock-bot@github.com"
+          git checkout main
+          git add pyproject.toml src/qss_parser/__init__.py CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to ${{ env.VERSION }}"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi
 
-          See the [README.md](README.md) for more details.
-        EOF
+      - name: Clean up backup files
+        run: |
+          rm -f pyproject.toml.bak src/qss_parser/__init__.py.bak
+        if: success()
 
-    - name: Update or create CHANGELOG.md
-      run: |
-        CURRENT_DATE=$(date +%Y-%m-%d)
-        VERSION=${{ env.VERSION }}
-        FORMATTED_NOTES=$(sed 's/^## Overview/### Overview/' release_notes.md)
-        if [ -f CHANGELOG.md ]; then
-          echo -e "## [$VERSION] - $CURRENT_DATE\n\n$FORMATTED_NOTES\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
-        else
-          cat << EOF > CHANGELOG.md
-            # Changelog
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: qss-parser ${{ env.VERSION }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            All notable changes to the **qss-parser** project will be documented in this file.
+      - name: Build package
+        run: python -m build --sdist --wheel
 
-            The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+      - name: Publish to TestPyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TESTPYPI }}
+        run: python -m twine upload --repository testpypi dist/* --verbose
 
-            ## [$VERSION] - $CURRENT_DATE
+      - name: Verify TestPyPI installation
+        run: |
+          pip install --index-url https://test.pypi.org/simple/ --no-cache-dir qss-parser==${{ env.VERSION }}
+          python -c "import qss_parser; print(qss_parser.__version__)"
+        env:
+          PIP_NO_CACHE_DIR: off
 
-            $FORMATTED_NOTES
-          EOF
-        fi
-
-    - name: Commit changes
-      run: |
-        git config user.name "OniBot"
-        git config user.email "onimock-bot@github.com"
-        git add pyproject.toml src/qss_parser/__init__.py CHANGELOG.md
-        if ! git diff --cached --quiet; then
-          git commit -m "chore: bump version to ${{ env.VERSION }}"
-          git push
-        else
-          echo "No changes to commit"
-        fi
-
-    - name: Clean up backup files
-      run: |
-        rm -f pyproject.toml.bak src/qss_parser/__init__.py.bak
-      if: success()
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ env.VERSION }}
-        name: qss-parser ${{ env.VERSION }}
-        body_path: release_notes.md
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Build package
-      run: python -m build --sdist --wheel
-
-    - name: Publish to TestPyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.TESTPYPI }}
-      run: python -m twine upload --repository testpypi dist/* --verbose
-
-    - name: Verify TestPyPI installation
-      run: |
-        pip install --index-url https://test.pypi.org/simple/ --no-cache-dir qss-parser==${{ env.VERSION }}
-        python -c "import qss_parser; print(qss_parser.__version__)"
-      env:
-        PIP_NO_CACHE_DIR: off
-
-    - name: Publish to PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI }}
-      run: python -m twine upload dist/* --verbose
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI }}
+        run: python -m twine upload dist/* --verbose
