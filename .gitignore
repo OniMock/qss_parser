@@ -175,3 +175,23 @@ cython_debug/
 
 #vscode
 .vscode
+
+#Python
+
+pycache/ *.pyc *.pyo *.pyd .Python env/ venv/ ENV/ env.bak/ venv.bak/
+
+#Build artifacts
+
+dist/ build/ *.egg-info/
+
+#Testing
+
+.coverage .tox/ .pytest_cache/
+
+#IDEs
+
+.idea/ .vscode/
+
+#Miscellaneous
+
+*.log *.bak *.swp
