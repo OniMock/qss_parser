@@ -6,6 +6,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -31,6 +32,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements-dev.txt
 
+    - name: Run linters
+      run: |
+        pip install flake8 black
+        flake8 src tests
+        black --check src tests
+
     - name: Run tests with coverage
       run: |
         pip install pytest pytest-cov
@@ -47,7 +54,7 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -67,10 +74,15 @@ jobs:
         pip install tomlkit build twine
 
     - name: Extract version from tag
+      id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      if: github.event_name != 'workflow_dispatch'
 
-    - name: Update versions
-      run: python update_version.py ${{ env.VERSION }}
+    - name: Set version for manual dispatch
+      id: set_version
+      run: |
+        echo "VERSION=$(python -c "import tomlkit; print(tomlkit.parse(open('pyproject.toml').read())['project']['version'])")" >> $GITHUB_ENV
+      if: github.event_name == 'workflow_dispatch'
 
     - name: Verify version consistency
       run: |
@@ -80,6 +92,9 @@ jobs:
           echo "Error: Versions mismatch - pyproject.toml: $PYPROJECT_VERSION, __init__.py: $INIT_VERSION"
           exit 1
         fi
+
+    - name: Update versions
+      run: python update_version.py ${{ env.VERSION }}
 
     - name: Generate release notes
       id: generate_notes
@@ -93,24 +108,24 @@ jobs:
             ISSUE_NUM=${ISSUE/#}
             COMMIT_MSG=$(echo "$COMMIT_MSG" | sed "s|$ISSUE|[#$ISSUE_NUM](https://github.com/${{ github.repository }}/issues/$ISSUE_NUM)|g")
           done
-          NOTES+="- $COMMIT_MSG ([${COMMIT_HASH:0:7}](https://github.com/${{ github.repository }}/commit/$COMMIT_HASH))\n"
+          NOTES="${NOTES}- $COMMIT_MSG ([${COMMIT_HASH:0:7}](https://github.com/${{ github.repository }}/commit/$COMMIT_HASH))\n"
         done < <(git log "$COMMIT_RANGE" --pretty=format:"%s|%H" --no-merges)
         CURRENT_DATE=$(date +%Y-%m-%d)
         cat << EOF > release_notes.md
-qss-parser v${{ env.VERSION }}
+          qss-parser v${{ env.VERSION }}
 
-## Overview
-Version ${{ env.VERSION }} of qss-parser.
+          ## Overview
+          Version ${{ env.VERSION }} of qss-parser.
 
-## Changes
-$NOTES
-## Installation
-\`\`\`bash
-pip install qss-parser==${{ env.VERSION }}
-\`\`\`
+          ## Changes
+          $NOTES
+          ## Installation
+          \`\`\`bash
+          pip install qss-parser==${{ env.VERSION }}
+          \`\`\`
 
-See the [README.md](README.md) for more details.
-EOF
+          See the [README.md](README.md) for more details.
+        EOF
 
     - name: Update or create CHANGELOG.md
       run: |
@@ -121,16 +136,16 @@ EOF
           echo -e "## [$VERSION] - $CURRENT_DATE\n\n$FORMATTED_NOTES\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
         else
           cat << EOF > CHANGELOG.md
-# Changelog
+            # Changelog
 
-All notable changes to the **qss-parser** project will be documented in this file.
+            All notable changes to the **qss-parser** project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+            The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [$VERSION] - $CURRENT_DATE
+            ## [$VERSION] - $CURRENT_DATE
 
-$FORMATTED_NOTES
-EOF
+            $FORMATTED_NOTES
+          EOF
         fi
 
     - name: Commit changes
@@ -138,8 +153,17 @@ EOF
         git config user.name "OniBot"
         git config user.email "onimock-bot@github.com"
         git add pyproject.toml src/qss_parser/__init__.py CHANGELOG.md
-        git diff --cached --quiet || git commit -m "chore: bump version to ${{ env.VERSION }}"
-        git push
+        if ! git diff --cached --quiet; then
+          git commit -m "chore: bump version to ${{ env.VERSION }}"
+          git push
+        else
+          echo "No changes to commit"
+        fi
+
+    - name: Clean up backup files
+      run: |
+        rm -f pyproject.toml.bak src/qss_parser/__init__.py.bak
+      if: success()
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
