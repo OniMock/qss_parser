@@ -3,7 +3,7 @@
 ![PyPI Version](https://img.shields.io/pypi/v/qss-parser)
 ![Python Version](https://img.shields.io/pypi/pyversions/qss-parser)
 ![License](https://img.shields.io/pypi/l/qss-parser)
-![Build Status](https://github.com/yourusername/qss-parser/actions/workflows/ci.yml/badge.svg)
+![Build Status](https://github.com/OniMock/qss_parser/actions/workflows/ci.yml/badge.svg)
 
 **QSS Parser** is a lightweight and robust Python library designed to parse and validate Qt Style Sheets (QSS), the stylesheet language used by Qt applications to customize the appearance of widgets. It enables developers to validate QSS syntax, parse QSS into structured rules, and extract styles for specific Qt widgets based on their object names, class names, or additional selectors. This library is particularly useful for developers working with PyQt or PySide applications who need to manage and apply QSS styles programmatically.
 
@@ -59,6 +59,7 @@ pip install qss-parser PyQt5
 The `qss-parser` library provides a simple and intuitive API for validating, parsing, and applying QSS styles. Below are several examples to demonstrate its capabilities.
 
 ### Complete Example
+
 Check complete example [here](https://github.com/OniMock/qss_parser/tree/main/tests)
 
 ### Basic Example
@@ -102,6 +103,7 @@ else:
 ```
 
 **Output**:
+
 ```
 Styles for widget:
 #myButton {
@@ -129,6 +131,7 @@ for error in errors:
 ```
 
 **Output**:
+
 ```
 Error on line 3: Property missing ';': color: blue
 ```
@@ -167,6 +170,7 @@ print(styles)
 ```
 
 **Output**:
+
 ```
 #titleLeftApp {
     font: 12pt "Segoe UI Semibold";
@@ -238,6 +242,7 @@ The main class for parsing and managing QSS.
 Represents a QSS rule with a selector and properties.
 
 - **Attributes**:
+
   - `selector: str`: The rule's selector (e.g., `#myButton`, `QPushButton:hover`).
   - `properties: List[QSSProperty]`: List of properties in the rule.
   - `original: str`: The original QSS text for the rule.
