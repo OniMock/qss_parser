@@ -1,5 +1,6 @@
 import sys
 import re
+import shutil
 import tomlkit
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,9 @@ def update_pyproject_version(filepath: Path, new_version: str) -> None:
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
+
+    # Create a backup of the file
+    shutil.copy(filepath, filepath.with_suffix(filepath.suffix + '.bak'))
 
     with filepath.open('r', encoding='utf-8') as f:
         data = tomlkit.parse(f.read())
@@ -32,6 +36,9 @@ def update_init_version(filepath: Path, new_version: str) -> None:
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {filepath}")
+
+    # Create a backup of the file
+    shutil.copy(filepath, filepath.with_suffix(filepath.suffix + '.bak'))
 
     with filepath.open('r', encoding='utf-8') as f:
         content = f.read()
