@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional
 import re
 
 
@@ -364,7 +364,7 @@ class QSSParser:
         """
         return line.startswith("/*") and not in_comment
 
-    def _validate_selector(self, line: str, line_num: int) -> Tuple[List[str], str]:
+    def _validate_selector(self, line: str, line_num: int) -> tuple[List[str], str]:
         """
         Validate a line containing a selector and an opening brace.
 
