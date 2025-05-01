@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import re
 
 
@@ -364,7 +364,7 @@ class QSSParser:
         """
         return line.startswith("/*") and not in_comment
 
-    def _validate_selector(self, line: str, line_num: int) -> tuple[List[str], str]:
+    def _validate_selector(self, line: str, line_num: int) -> Tuple[List[str], str]:
         """
         Validate a line containing a selector and an opening brace.
 
@@ -373,7 +373,7 @@ class QSSParser:
             line_num (int): The line number in the QSS text.
 
         Returns:
-            tuple[List[str], str]: A tuple containing a list of error messages and the extracted selector.
+            Tuple[List[str], str]: A tuple containing a list of error messages and the extracted selector.
         """
         errors = []
         selector = line[:-1].strip()
@@ -397,7 +397,7 @@ class QSSParser:
 
     def _process_property_line_for_format(
         self, line: str, buffer: str, line_num: int
-    ) -> tuple[str, List[str]]:
+    ) -> Tuple[str, List[str]]:
         """
         Process a property line for format validation, accumulating in the buffer and checking for semicolons.
 
@@ -407,7 +407,7 @@ class QSSParser:
             line_num (int): The current line number.
 
         Returns:
-            tuple[str, List[str]]: Updated buffer and list of error messages.
+            Tuple[str, List[str]]: Updated buffer and list of error messages.
         """
         errors = []
         if ";" in line and buffer.strip():
