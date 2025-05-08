@@ -60,7 +60,7 @@ The `qss-parser` library provides a simple and intuitive API for validating, par
 
 ### Complete Example
 
-Check the complete example [here](https://github.com/OniMock/qss_parser/tree/main/tests).
+Check the complete example [here](https://github.com/OniMock/qss_parser/tree/main/examples).
 
 ### Basic Example
 
