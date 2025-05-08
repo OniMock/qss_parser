@@ -1,17 +1,7 @@
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    Set,
-    Tuple,
-    TypedDict,
-)
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, Tuple, TypedDict
 
 
 class MetaObjectProtocol(Protocol):

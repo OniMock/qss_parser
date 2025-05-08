@@ -2,15 +2,11 @@ import logging
 import os
 import sys
 import unittest
-from typing import List
+from typing import List, Set
 from unittest.mock import Mock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from qss_parser import (
-    QSSParser,
-    QSSRule,
-    QSSValidator,
-)
+from qss_parser import QSSParser, QSSRule, QSSValidator
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -408,7 +404,7 @@ class TestQSSParserParsing(unittest.TestCase):
             3,
             "Should parse multiple selectors as separate rules",
         )
-        selectors: set[str] = {rule.selector for rule in parser._state.rules}
+        selectors: Set[str] = {rule.selector for rule in parser._state.rules}
         self.assertEqual(selectors, {"QPushButton", "QFrame", ".customClass"})
 
     def test_parse_duplicate_properties(self) -> None:
@@ -1140,7 +1136,7 @@ class TestQSSParserEvents(unittest.TestCase):
         self.parser.on("rule_added", lambda rule: rules_added.append(rule))
         self.parser.parse(self.qss)
         self.assertEqual(len(rules_added), 2, "Should trigger rule_added for each rule")
-        selectors: set[str] = {rule.selector for rule in rules_added}
+        selectors: Set[str] = {rule.selector for rule in rules_added}
         self.assertEqual(
             selectors, {"QPushButton", "#myButton"}, "Should capture all selectors"
         )
@@ -1219,7 +1215,7 @@ class TestQSSParserEvents(unittest.TestCase):
             5,
             "Should trigger rule_added for each rule including base rules",
         )
-        selectors: set[str] = {rule.selector for rule in rules_added}
+        selectors: Set[str] = {rule.selector for rule in rules_added}
         self.assertEqual(
             selectors,
             {
@@ -1247,7 +1243,7 @@ class TestQSSParserEvents(unittest.TestCase):
         self.assertEqual(
             len(rules_added), 2, "Should trigger rule_added for each selector"
         )
-        selectors: set[str] = {rule.selector for rule in rules_added}
+        selectors: Set[str] = {rule.selector for rule in rules_added}
         self.assertEqual(
             selectors, {"QPushButton", "QFrame"}, "Should capture all selectors"
         )
