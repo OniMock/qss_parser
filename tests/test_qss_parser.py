@@ -1,26 +1,318 @@
-import unittest
-from unittest.mock import Mock
-import sys
+import logging
 import os
+import sys
+import unittest
+from typing import List
+from unittest.mock import Mock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from qss_parser import QSSParser  # noqa: E402
+from qss_parser import (
+    QSSParser,
+    QSSRule,
+    QSSValidator,
+)
+
+logging.basicConfig(level=logging.DEBUG)
 
 
-class TestQSSParser(unittest.TestCase):
-    def setUp(self):
+class TestQSSParserValidation(unittest.TestCase):
+    def setUp(self) -> None:
         """
-        Set up the test environment before each test.
-
-        Initializes:
-            parser: A QSSParser instance.
-            qss: Sample QSS text for testing.
-            widget: Mock widget with objectName 'myButton' and className 'QPushButton'.
-            widget_no_name: Mock widget with empty objectName and className 'QScrollBar'.
-            widget_no_qss: Mock widget with objectName 'verticalScrollBar' and className 'QScrollBar'.
+        Set up the test environment for validation tests.
         """
-        self.parser = QSSParser()
-        self.qss = """
+        self.validator: QSSValidator = QSSValidator()
+
+    def test_check_format_valid_qss(self) -> None:
+        """
+        Test QSS with valid format, expecting no errors.
+        """
+        qss: str = """
+        QPushButton {
+            color: blue;
+            background: white;
+        }
+        #myButton {
+            font-size: 12px;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Valid QSS should return no errors")
+
+    def test_check_format_missing_semicolon(self) -> None:
+        """
+        Test QSS with a property missing a semicolon.
+        """
+        qss: str = """
+        QPushButton {
+            color: blue
+            background: white;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 3: Property missing ';': color: blue"]
+        self.assertEqual(errors, expected, "Should report property missing ';'")
+
+    def test_check_format_extra_closing_brace(self) -> None:
+        """
+        Test QSS with a closing brace without a matching opening brace.
+        """
+        qss: str = """
+        QPushButton {
+            color: blue;
+        }
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 5: Closing brace '}' without matching '{': }"
+        ]
+        self.assertEqual(
+            errors, expected, "Should report closing brace without matching '{'"
+        )
+
+    def test_check_format_unclosed_brace(self) -> None:
+        """
+        Test QSS with an unclosed opening brace.
+        """
+        qss: str = """
+        QPushButton {
+            color: blue;
+            background: white;
+        #myButton {
+            font-size: 12px;
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 6: Unclosed brace '{' for selector: #myButton"
+        ]
+        self.assertEqual(errors, expected, "Should report unclosed brace")
+
+    def test_check_format_property_outside_block(self) -> None:
+        """
+        Test QSS with a property outside a block.
+        """
+        qss: str = """
+        color: blue;
+        QPushButton {
+            background: white;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 2: Property outside block: color: blue;"]
+        self.assertEqual(errors, expected, "Should report property outside block")
+
+    def test_check_format_ignore_comments(self) -> None:
+        """
+        Test that comments are ignored during validation.
+        """
+        qss: str = """
+        /* Comment with { and without ; */
+        QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Comments should not generate errors")
+
+    def test_check_format_multi_line_property(self) -> None:
+        """
+        Test QSS with a property split across multiple lines without a semicolon.
+        """
+        qss: str = """
+        QPushButton {
+            color:
+            blue
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 4: Property missing ';': color: blue"]
+        self.assertEqual(
+            errors, expected, "Should report multi-line property missing ';'"
+        )
+
+    def test_check_format_multiple_errors(self) -> None:
+        """
+        Test QSS with multiple errors (missing semicolon, unclosed brace).
+        """
+        qss: str = """
+        QPushButton {
+            color: blue
+        #myButton {
+            font-size: 12px
+        background: gray;
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 3: Property missing ';': color: blue",
+            "Error on line 5: Property missing ';': font-size: 12px",
+            "Error on line 6: Unclosed brace '{' for selector: #myButton",
+        ]
+        self.assertEqual(errors, expected, "Should report all errors")
+
+    def test_check_format_empty_selector(self) -> None:
+        """
+        Test QSS with an empty selector before an opening brace.
+        """
+        qss: str = """
+        {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 2: Empty selector before '{': {"]
+        self.assertEqual(errors, expected, "Should report empty selector")
+
+    def test_check_format_single_line_rule(self) -> None:
+        """
+        Test QSS with a valid single-line rule.
+        """
+        qss: str = """
+        #titleLeftApp { font: 12pt "Segoe UI Semibold"; }
+        QPushButton { color: blue; }
+        #titleApp QPushButton, QScrollbar::handle:vertical { font: 12pt "Segoe UI Semibold"; }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Valid single-line rule should return no errors")
+
+    def test_check_format_with_pseudo_rule(self) -> None:
+        """
+        Test QSS with a valid single-line rule with pseudo-elements.
+        """
+        qss: str = """
+        QScrollBar::handle:vertical {
+            background: darkgray;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Valid rule with pseudo should return no errors")
+
+    def test_check_format_with_single_line_rule_pseudo_rule(self) -> None:
+        """
+        Test QSS with a valid single-line rule with pseudo-elements.
+        """
+        qss: str = """
+        QScrollBar::handle:vertical { background: darkgray; }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Valid rule with pseudo should return no errors")
+
+    def test_check_format_invalid_single_line_rule(self) -> None:
+        """
+        Test QSS with an invalid single-line rule (missing semicolon).
+        """
+        qss: str = """
+        #titleLeftApp { font: 12pt "Segoe UI Semibold" }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Property missing ';': font: 12pt \"Segoe UI Semibold\""
+        ]
+        self.assertEqual(
+            errors, expected, "Should report missing semicolon in single-line rule"
+        )
+
+    def test_check_format_invalid_property(self) -> None:
+        """
+        Test QSS with an invalid property (empty value).
+        """
+        qss: str = """
+        QPushButton {
+            color: ;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 3: Malformed property: color:"]
+        self.assertEqual(errors, expected, "Should report invalid property")
+
+    def test_check_format_complex_property_value(self) -> None:
+        """
+        Test QSS with properties containing complex values (e.g., commas, quotes).
+        """
+        qss: str = """
+        QPushButton {
+            font: 12pt "Segoe UI, Arial";
+            background: url(image.png);
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Complex property values should be valid")
+
+    def test_check_format_complex_for_attribute_selector(self) -> None:
+        """
+        Test QSS with properties containing complex values (e.g., [select]).
+        """
+        qss: str = """
+        #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Complex attributes values should be valid")
+
+    def test_check_format_complex_for_attribute_selector_with_class_and_id(
+        self,
+    ) -> None:
+        """
+        Test QSS with properties containing complex values (e.g., [select]).
+        """
+        qss: str = """
+        QPushButton #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Complex attributes values should be valid")
+
+    def test_check_format_nested_comments(self) -> None:
+        """
+        Test QSS with nested comments.
+        """
+        qss: str = """
+        /* /* nested comment */ */
+        QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Nested comments should be ignored")
+
+    def test_check_format_selector_with_extra_spaces(self) -> None:
+        """
+        Test QSS with selectors containing extra spaces.
+        """
+        qss: str = """
+        QWidget   >   QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Selectors with extra spaces should be valid")
+
+    def test_check_format_property_empty_value_no_semicolon(self) -> None:
+        """
+        Test QSS with a property that has an empty value and no semicolon.
+        """
+        qss: str = """
+        QPushButton {
+            color:
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = ["Error on line 3: Property missing ';': color:"]
+        self.assertEqual(
+            errors, expected, "Should report empty value property as malformed"
+        )
+
+
+class TestQSSParserParsing(unittest.TestCase):
+    def setUp(self) -> None:
+        """
+        Set up the test environment for parsing tests.
+        """
+        self.parser: QSSParser = QSSParser()
+        self.qss: str = """
         #myButton {
             color: red;
         }
@@ -44,198 +336,181 @@ class TestQSSParser(unittest.TestCase):
             border-radius: 5px;
         }
         """
-        self.widget = Mock()
+        self.parser.parse(self.qss)
+
+    def test_parse_valid_qss(self) -> None:
+        """
+        Test parsing valid QSS text.
+        """
+        self.assertEqual(
+            len(self.parser._state.rules), 8, "Should parse all rules correctly"
+        )
+
+    def test_parse_empty_qss(self) -> None:
+        """
+        Test parsing empty QSS text.
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse("")
+        self.assertEqual(
+            len(parser._state.rules), 0, "Empty QSS should result in no rules"
+        )
+
+    def test_parse_comments_only(self) -> None:
+        """
+        Test parsing QSS with only comments.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        /* This is a comment */
+        /* Another comment */
+        """
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules), 0, "Comments-only QSS should result in no rules"
+        )
+
+    def test_parse_malformed_property(self) -> None:
+        """
+        Test parsing QSS with a malformed property.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton {
+            color: blue;
+            margin: ;
+            background
+        }
+        """
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules), 1, "Should parse valid properties only"
+        )
+        self.assertEqual(
+            len(parser._state.rules[0].properties),
+            1,
+            "Should only include valid property",
+        )
+
+    def test_parse_multiple_selectors(self) -> None:
+        """
+        Test parsing QSS with multiple selectors in a single rule.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton, QFrame, .customClass {
+            color: blue;
+        }
+        """
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules),
+            3,
+            "Should parse multiple selectors as separate rules",
+        )
+        selectors: set[str] = {rule.selector for rule in parser._state.rules}
+        self.assertEqual(selectors, {"QPushButton", "QFrame", ".customClass"})
+
+    def test_parse_duplicate_properties(self) -> None:
+        """
+        Test parsing QSS with duplicate properties in a single rule.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton {
+            color: blue;
+            color: red;
+        }
+        """
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        self.assertEqual(
+            len(parser._state.rules[0].properties),
+            2,
+            "Should keep duplicate properties",
+        )
+
+    def test_parse_attribute_selector_complex(self) -> None:
+        """
+        Test parsing QSS with a complex attribute selector.
+        """
+        qss: str = """
+        QPushButton [data-value="complex string with spaces"] {
+            color: blue;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(
+            rule.selector, 'QPushButton [data-value="complex string with spaces"]'
+        )
+        self.assertEqual(rule.attributes, ['[data-value="complex string with spaces"]'])
+        self.assertEqual(len(rule.properties), 1)
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "blue")
+
+
+class TestQSSParserStyleSelection(unittest.TestCase):
+    def setUp(self) -> None:
+        """
+        Set up the test environment for style selection tests.
+        """
+        self.parser: QSSParser = QSSParser()
+        self.qss: str = """
+        #myButton {
+            color: red;
+        }
+        QPushButton {
+            background: blue;
+        }
+        QScrollBar {
+            background: gray;
+            width: 10px;
+        }
+        QScrollBar:vertical {
+            background: lightgray;
+        }
+        QWidget {
+            font-size: 12px;
+        }
+        QFrame {
+            border: 1px solid black;
+        }
+        .customClass {
+            border-radius: 5px;
+        }
+        """
+        self.widget: Mock = Mock()
         self.widget.objectName.return_value = "myButton"
         self.widget.metaObject.return_value.className.return_value = "QPushButton"
-        self.widget_no_name = Mock()
+        self.widget_no_name: Mock = Mock()
         self.widget_no_name.objectName.return_value = ""
         self.widget_no_name.metaObject.return_value.className.return_value = (
             "QScrollBar"
         )
-        self.widget_no_qss = Mock()
+        self.widget_no_qss: Mock = Mock()
         self.widget_no_qss.objectName.return_value = "verticalScrollBar"
         self.widget_no_qss.metaObject.return_value.className.return_value = "QScrollBar"
         self.parser.parse(self.qss)
 
-    def test_check_format_valid_qss(self):
-        """
-        Test QSS with valid format, expecting no errors.
-        """
-        qss = """
-        QPushButton {
-            color: blue;
-            background: white;
-        }
-        #myButton {
-            font-size: 12px;
-        }
-        """
-        errors = self.parser.check_format(qss)
-        self.assertEqual(errors, [], "Valid QSS should return no errors")
-
-    def test_check_format_missing_semicolon(self):
-        """
-        Test QSS with a property missing a semicolon.
-        """
-        qss = """
-        QPushButton {
-            color: blue
-            background: white;
-        }
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 3: Property missing ';': color: blue"]
-        self.assertEqual(errors, expected, "Should report property missing ';'")
-
-    def test_check_format_extra_closing_brace(self):
-        """
-        Test QSS with a closing brace without a matching opening brace.
-        """
-        qss = """
-        QPushButton {
-            color: blue;
-        }
-        }
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 5: Closing brace '}' without matching '{': }"]
-        self.assertEqual(
-            errors, expected, "Should report closing brace without matching '{'"
-        )
-
-    def test_check_format_unclosed_brace(self):
-        """
-        Test QSS with an unclosed opening brace.
-        """
-        qss = """
-        QPushButton {
-            color: blue;
-            background: white;
-        #myButton {
-            font-size: 12px;
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 6: Unclosed brace '{' for selector: #myButton"]
-        self.assertEqual(errors, expected, "Should report unclosed brace")
-
-    def test_check_format_property_outside_block(self):
-        """
-        Test QSS with a property outside a block.
-        """
-        qss = """
-        color: blue;
-        QPushButton {
-            background: white;
-        }
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 2: Property outside block: color: blue;"]
-        self.assertEqual(errors, expected, "Should report property outside block")
-
-    def test_check_format_ignore_comments(self):
-        """
-        Test that comments are ignored during validation.
-        """
-        qss = """
-        /* Comment with { and without ; */
-        QPushButton {
-            color: blue;
-        }
-        """
-        errors = self.parser.check_format(qss)
-        self.assertEqual(errors, [], "Comments should not generate errors")
-
-    def test_check_format_multi_line_property(self):
-        """
-        Test QSS with a property split across multiple lines without a semicolon.
-        """
-        qss = """
-        QPushButton {
-            color:
-            blue
-        }
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 4: Property missing ';': color: blue"]
-        self.assertEqual(
-            errors, expected, "Should report multi-line property missing ';'"
-        )
-
-    def test_check_format_multiple_errors(self):
-        """
-        Test QSS with multiple errors (missing semicolon, unclosed brace).
-        """
-        qss = """
-        QPushButton {
-            color: blue
-        #myButton {
-            font-size: 12px
-        background: gray;
-        """
-        errors = self.parser.check_format(qss)
-        expected = [
-            "Error on line 3: Property missing ';': color: blue",
-            "Error on line 5: Property missing ';': font-size: 12px",
-            "Error on line 6: Unclosed brace '{' for selector: #myButton",
-        ]
-        self.assertEqual(errors, expected, "Should report all errors")
-
-    def test_check_format_empty_selector(self):
-        """
-        Test QSS with an empty selector before an opening brace.
-        """
-        qss = """
-        {
-            color: blue;
-        }
-        """
-        errors = self.parser.check_format(qss)
-        expected = ["Error on line 2: Empty selector before '{': {"]
-        self.assertEqual(errors, expected, "Should report empty selector")
-
-    def test_check_format_single_line_rule(self):
-        """
-        Test QSS with a valid single-line rule.
-        """
-        qss = """
-        #titleLeftApp { font: 12pt "Segoe UI Semibold"; }
-        QPushButton{color: blue;}
-        """
-        errors = self.parser.check_format(qss)
-        self.assertEqual(errors, [], "Valid single-line rule should return no errors")
-
-    def test_check_format_invalid_single_line_rule(self):
-        """
-        Test QSS with an invalid single-line rule (missing semicolon).
-        """
-        qss = """
-        #titleLeftApp { font: 12pt "Segoe UI Semibold" }
-        """
-        errors = self.parser.check_format(qss)
-        expected = [
-            "Error on line 2: Property missing ';': font: 12pt \"Segoe UI Semibold\""
-        ]
-        self.assertEqual(
-            errors, expected, "Should report missing semicolon in single-line rule"
-        )
-
-    # [Rest of the test methods unchanged]
-    def test_get_styles_for_object_name(self):
+    def test_get_styles_for_object_name(self) -> None:
         """
         Test style retrieval by object name.
         """
-        stylesheet = self.parser.get_styles_for(self.widget)
-        expected = """#myButton {
+        stylesheet: str = self.parser.get_styles_for(self.widget)
+        expected: str = """#myButton {
     color: red;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_class_name_no_object_name(self):
+    def test_get_styles_for_class_name_no_object_name(self) -> None:
         """
         Test style retrieval by class name when no object name is provided.
         """
-        stylesheet = self.parser.get_styles_for(self.widget_no_name)
-        expected = """QScrollBar {
+        stylesheet: str = self.parser.get_styles_for(self.widget_no_name)
+        expected: str = """QScrollBar {
     background: gray;
     width: 10px;
 }
@@ -244,12 +519,12 @@ QScrollBar:vertical {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_object_name_no_qss_fallback_class(self):
+    def test_get_styles_for_object_name_no_qss_fallback_class(self) -> None:
         """
         Test fallback to class name when object name has no styles.
         """
-        stylesheet = self.parser.get_styles_for(self.widget_no_qss)
-        expected = """QScrollBar {
+        stylesheet: str = self.parser.get_styles_for(self.widget_no_qss)
+        expected: str = """QScrollBar {
     background: gray;
     width: 10px;
 }
@@ -258,14 +533,14 @@ QScrollBar:vertical {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_include_class_if_object_name(self):
+    def test_get_styles_for_include_class_if_object_name(self) -> None:
         """
         Test including class styles when an object name is provided.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, include_class_if_object_name=True
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 QPushButton {
@@ -273,50 +548,54 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_fallback_class_when_have_object_name(self):
+    def test_get_styles_for_fallback_class_when_have_object_name(self) -> None:
         """
         Test style retrieval with a fallback class when an object name is provided.
         """
-        stylesheet = self.parser.get_styles_for(self.widget, fallback_class="QWidget")
-        expected = """#myButton {
+        stylesheet: str = self.parser.get_styles_for(
+            self.widget, fallback_class="QWidget"
+        )
+        expected: str = """#myButton {
     color: red;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_fallback_class_when_without_object_name(self):
+    def test_get_styles_for_fallback_class_when_without_object_name(self) -> None:
         """
         Test style retrieval with a fallback class when no object name is provided.
         """
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = "oiiio"
         widget.metaObject.return_value.className.return_value = "QFrame"
-        stylesheet = self.parser.get_styles_for(widget, fallback_class="QWidget")
-        expected = """QFrame {
+        stylesheet: str = self.parser.get_styles_for(widget, fallback_class="QWidget")
+        expected: str = """QFrame {
     border: 1px solid black;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_fallback_class_when_without_object_name_and_class(self):
+    def test_get_styles_for_fallback_class_when_without_object_name_and_class(
+        self,
+    ) -> None:
         """
         Test style retrieval with a fallback class when neither object name nor class has styles.
         """
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = "oiiio"
         widget.metaObject.return_value.className.return_value = "Ola"
-        stylesheet = self.parser.get_styles_for(widget, fallback_class="QWidget")
-        expected = """QWidget {
+        stylesheet: str = self.parser.get_styles_for(widget, fallback_class="QWidget")
+        expected: str = """QWidget {
     font-size: 12px;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_additional_selectors(self):
+    def test_get_styles_for_additional_selectors(self) -> None:
         """
         Test style retrieval with additional selectors.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, additional_selectors=["QFrame", ".customClass"]
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 .customClass {
@@ -327,17 +606,17 @@ QFrame {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_all_parameters(self):
+    def test_get_styles_for_all_parameters(self) -> None:
         """
         Test style retrieval with all parameters combined.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget,
             fallback_class="QWidget",
             additional_selectors=["QFrame"],
             include_class_if_object_name=True,
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 QFrame {
@@ -348,56 +627,24 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_empty_qss(self):
-        """
-        Test style retrieval with empty QSS.
-        """
-        parser = QSSParser()
-        parser.parse("")
-        stylesheet = parser.get_styles_for(self.widget)
-        self.assertEqual(stylesheet.strip(), "")
-
-    def test_get_styles_for_invalid_selector(self):
+    def test_get_styles_for_invalid_selector(self) -> None:
         """
         Test style retrieval with an invalid additional selector.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, additional_selectors=["InvalidClass"]
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_invalid_selector_2(self):
-        """
-        Test style retrieval with an invalid selector.
-        """
-        parser = QSSParser()
-        qss = """
-        # {
-            color: blue;
-        }
-        QPushButton {
-            background: green;
-        }
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = ""
-        widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QPushButton {
-    background: green;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_composite_selector(self):
+    def test_get_styles_for_composite_selector(self) -> None:
         """
         Test style retrieval with composite selectors.
         """
-        parser = QSSParser()
-        qss = """
+        parser: QSSParser = QSSParser()
+        qss: str = """
         QScrollBar QWidget {
             margin: 5px;
         }
@@ -406,11 +653,11 @@ QPushButton {
         }
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QScrollBar"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QScrollBar QWidget {
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QScrollBar QWidget {
     margin: 5px;
 }
 QScrollBar:vertical QWidget {
@@ -418,34 +665,34 @@ QScrollBar:vertical QWidget {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_multiple_selectors(self):
+    def test_get_styles_for_multiple_selectors(self) -> None:
         """
         Test style retrieval with multiple selectors in a single rule.
         """
-        parser = QSSParser()
-        qss = """
+        parser: QSSParser = QSSParser()
+        qss: str = """
         QPushButton, QScrollBar {
             color: green;
         }
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QScrollBar"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QScrollBar {
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QScrollBar {
     color: green;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_fallback_class_and_additional_selectors(self):
+    def test_get_styles_for_fallback_class_and_additional_selectors(self) -> None:
         """
         Test style retrieval combining fallback class and additional selectors.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, fallback_class="QWidget", additional_selectors=["QFrame"]
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 QFrame {
@@ -453,16 +700,16 @@ QFrame {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_include_class_and_additional_selectors(self):
+    def test_get_styles_for_include_class_and_additional_selectors(self) -> None:
         """
         Test style retrieval combining include_class_if_object_name and additional selectors.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget,
             additional_selectors=[".customClass"],
             include_class_if_object_name=True,
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 .customClass {
@@ -473,41 +720,41 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_object_name_no_rules(self):
+    def test_get_styles_for_object_name_no_rules(self) -> None:
         """
         Test style retrieval for an object name with no rules, including class styles.
         """
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = "nonExistentButton"
         widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             widget, include_class_if_object_name=True
         )
-        expected = """QPushButton {
+        expected: str = """QPushButton {
     background: blue;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_fallback_class_no_rules(self):
+    def test_get_styles_for_fallback_class_no_rules(self) -> None:
         """
         Test style retrieval with a fallback class that has no rules.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, fallback_class="NonExistentClass"
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_mixed_additional_selectors(self):
+    def test_get_styles_for_mixed_additional_selectors(self) -> None:
         """
         Test style retrieval with a mix of valid and invalid additional selectors.
         """
-        stylesheet = self.parser.get_styles_for(
+        stylesheet: str = self.parser.get_styles_for(
             self.widget, additional_selectors=["QFrame", "InvalidClass"]
         )
-        expected = """#myButton {
+        expected: str = """#myButton {
     color: red;
 }
 QFrame {
@@ -515,215 +762,495 @@ QFrame {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_multiple_selectors_with_pseudo_state(self):
-        """
-        Test style retrieval with multiple selectors including pseudo-states.
-        """
-        parser = QSSParser()
-        qss = """
-        QPushButton:hover, QScrollBar:hover {
-            color: purple;
-        }
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = ""
-        widget.metaObject.return_value.className.return_value = "QScrollBar"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QScrollBar:hover {
-    color: purple;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_missing_closing_brace(self):
-        """
-        Test style retrieval with QSS missing a closing brace.
-        """
-        parser = QSSParser()
-        qss = """
-        QPushButton {
-            color: blue;
-        #myButton {
-            color: red;
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = "myButton"
-        widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = ""
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_malformed_property(self):
-        """
-        Test style retrieval with a malformed property.
-        """
-        parser = QSSParser()
-        qss = """
-        QPushButton {
-            color: blue;
-            margin: ;
-            background
-        }
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = ""
-        widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QPushButton {
-    color: blue;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_complex_nested_selector(self):
-        """
-        Test style retrieval with a complex nested selector.
-        """
-        parser = QSSParser()
-        qss = """
-        QWidget #myWidget QPushButton {
-            border: 2px solid red;
-        }
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = ""
-        widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = ""
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_pseudo_state_combination(self):
+    def test_get_styles_for_pseudo_state_combination(self) -> None:
         """
         Test style retrieval with combined pseudo-states.
         """
-        parser = QSSParser()
-        qss = """
+        parser: QSSParser = QSSParser()
+        qss: str = """
         QPushButton:hover:focus {
-            color: yellow;
+            color: green;
         }
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QPushButton:hover:focus {
-    color: yellow;
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton:hover:focus {
+    color: green;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_pseudo_element_selector(self):
+    def test_get_styles_for_pseudo_element_selector(self) -> None:
         """
-        Test style retrieval with a pseudo-element selector.
+        Test style retrieval with pseudo-element selectors.
         """
-        parser = QSSParser()
-        qss = """
-        QScrollBar::handle:vertical {
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QScrollBar::handle {
             background: darkgray;
         }
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QScrollBar"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QScrollBar::handle:vertical {
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QScrollBar::handle {
     background: darkgray;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_empty_qss_with_parameters(self):
+    def test_get_styles_for_empty_qss_with_parameters(self) -> None:
         """
-        Test style retrieval with empty QSS and various parameters.
+        Test style retrieval with empty QSS and parameters.
         """
-        parser = QSSParser()
+        parser: QSSParser = QSSParser()
         parser.parse("")
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = "myButton"
         widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(
+        stylesheet: str = parser.get_styles_for(
             widget,
             fallback_class="QWidget",
             additional_selectors=["QFrame"],
             include_class_if_object_name=True,
         )
-        self.assertEqual(stylesheet.strip(), "")
+        self.assertEqual(stylesheet, "", "Empty QSS should return empty stylesheet")
 
-    def test_get_styles_for_empty_qss_with_parameters_2(self):
-        """
-        Test style retrieval with specific QSS and parameters.
-        """
-        parser = QSSParser()
-        qss = """
-        #myButton2 QFrame {
-            color: blue;
-        }
-        Qframe, QWidget {
-            color: red;
-            background: darkgray;
-        }
-        QWidget {
-            color: green;
-            background: dark;
-            font: 12px;
-        }
-        """
-        parser.parse(qss)
-        widget = Mock()
-        widget.objectName.return_value = "myButton"
-        widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(
-            widget, fallback_class="QWidget", include_class_if_object_name=False
-        )
-        expected = """
-    QWidget {
-    color: red;
-    background: darkgray;
-    font: 12px;
-}
-    """
-        self.assertEqual(stylesheet.strip(), expected.strip())
-
-    def test_get_styles_for_duplicate_rules(self):
+    def test_get_styles_for_duplicate_rules(self) -> None:
         """
         Test style retrieval with duplicate rules.
         """
-        parser = QSSParser()
-        qss = """
+        parser: QSSParser = QSSParser()
+        qss: str = """
         QPushButton {
             color: blue;
         }
-        QPushButton, Qwidget {
-            color: blue;
+        QPushButton {
+            background: white;
         }
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        expected = """QPushButton {
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton {
     color: blue;
+    background: white;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_comments_only(self):
+    def test_get_styles_for_missing_closing_brace(self) -> None:
         """
-        Test style retrieval with QSS containing only comments.
+        Test style retrieval with QSS missing a closing brace.
         """
-        parser = QSSParser()
-        qss = """
-        /* This is a comment */
-        /* Another comment */
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton {
+            color: blue;
         """
         parser.parse(qss)
-        widget = Mock()
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        self.assertEqual(
+            stylesheet, "", "Incomplete QSS should return empty stylesheet"
+        )
+
+    def test_get_styles_for_hierarchical_selector(self) -> None:
+        """
+        Test style retrieval with hierarchical selectors.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QWidget > QFrame QPushButton {
+            border: 1px solid green;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QWidget > QFrame QPushButton {
+    border: 1px solid green;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_complex_nested_selector(self) -> None:
+        """
+        Test style retrieval with complex nested selectors.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QWidget QFrame > QPushButton {
+            border: 1px solid green;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QWidget QFrame > QPushButton {
+    border: 1px solid green;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_complex_selector(self) -> None:
+        """
+        Test style retrieval with complex selectors including pseudo-states.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QWidget QFrame > QPushButton:hover {
+            border: 1px solid green;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QWidget QFrame > QPushButton:hover {
+    border: 1px solid green;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_selector_with_extra_spaces(self) -> None:
+        """
+        Test style retrieval with a selector containing extra spaces.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QWidget   >   QPushButton {
+            border: 1px solid green;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QWidget > QPushButton {
+    border: 1px solid green;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_attribute_selector(self) -> None:
+        """
+        Test style retrieval for a selector with attribute and pseudo-state.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        """
+        errors: List[str] = parser.check_format(qss)
+        self.assertEqual(
+            errors, [], "Valid QSS with attribute selector should return no errors"
+        )
+
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules),
+            2,
+            "Should parse one rule and one base rule without pseudo-states",
+        )
+        self.assertEqual(
+            parser._state.rules[0].selector, '#btn_save[selected="true"]:hover'
+        )
+        self.assertEqual(len(parser._state.rules[0].properties), 2)
+        self.assertEqual(parser._state.rules[0].properties[0].name, "border-left")
+        self.assertEqual(
+            parser._state.rules[0].properties[0].value,
+            "22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0))",
+        )
+        self.assertEqual(parser._state.rules[0].properties[1].name, "background-color")
+        self.assertEqual(
+            parser._state.rules[0].properties[1].value, "rgb(98, 114, 164)"
+        )
+
+        widget: Mock = Mock()
+        widget.objectName.return_value = "btn_save"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """#btn_save[selected="true"]:hover {
+    border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+    background-color: rgb(98, 114, 164);
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_attribute_selector_with_class_and_id(self) -> None:
+        """
+        Test style retrieval for a selector with class and id with attribute and pseudo-state.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        """
+        errors: List[str] = parser.check_format(qss)
+        self.assertEqual(
+            errors, [], "Valid QSS with attribute selector should return no errors"
+        )
+
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules),
+            2,
+            "Should parse one rule and one base rule without pseudo-states",
+        )
+        self.assertEqual(
+            parser._state.rules[0].selector,
+            'QPushButton #btn_save[selected="true"]:hover',
+        )
+        self.assertEqual(len(parser._state.rules[0].properties), 2)
+        self.assertEqual(parser._state.rules[0].properties[0].name, "border-left")
+        self.assertEqual(
+            parser._state.rules[0].properties[0].value,
+            "22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0))",
+        )
+        self.assertEqual(parser._state.rules[0].properties[1].name, "background-color")
+        self.assertEqual(
+            parser._state.rules[0].properties[1].value, "rgb(98, 114, 164)"
+        )
+
+        widget: Mock = Mock()
+        widget.objectName.return_value = "btn_save"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton #btn_save[selected="true"]:hover {
+    border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+    background-color: rgb(98, 114, 164);
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_empty_id_and_fallback_and_additional_selector(
+        self,
+    ) -> None:
+        """
+        Test style retrieval for a selector with class and id with attribute and pseudo-state.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        #myButton {
+            color: red;
+        }
+        QPushButton {
+            background: blue;
+        }
+        QPushButton:hover {
+            background: green;
+        }
+        QScrollBar:hover {
+            background: blue;
+        }
+        QFrame {
+            background: yellow;
+        }
+        """
+        errors: List[str] = parser.check_format(qss)
+        self.assertEqual(
+            errors, [], "Valid QSS with attribute selector should return no errors"
+        )
+
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules),
+            7,
+            "Should parse one rule and one base rule without pseudo-states",
+        )
+        self.assertEqual(
+            parser._state.rules[0].selector,
+            "#myButton",
+        )
+        self.assertEqual(len(parser._state.rules[0].properties), 1)
+        self.assertEqual(parser._state.rules[0].properties[0].name, "color")
+        self.assertEqual(
+            parser._state.rules[0].properties[0].value,
+            "red",
+        )
+        widget: Mock = Mock()
+        widget.objectName.return_value = "QFrame btn_save"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget, "QScrollBar", ["QFrame"])
+        expected: str = """
+QFrame {
+    background: yellow;
+}
+QPushButton {
+    background: blue;
+}
+QPushButton:hover {
+    background: green;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_complex_hierarchical_selector(self) -> None:
+        """
+        Test style retrieval with a complex hierarchical selector.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QWidget > QFrame QPushButton #myButton:hover {
+            border: 2px solid red;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
         widget.objectName.return_value = "myButton"
         widget.metaObject.return_value.className.return_value = "QPushButton"
-        stylesheet = parser.get_styles_for(widget)
-        self.assertEqual(stylesheet.strip(), "")
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QWidget > QFrame QPushButton #myButton:hover {
+    border: 2px solid red;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+
+class TestQSSParserEvents(unittest.TestCase):
+    def setUp(self) -> None:
+        """
+        Set up the test environment for event tests.
+        """
+        self.parser: QSSParser = QSSParser()
+        self.qss: str = """
+        QPushButton {
+            color: blue;
+        }
+        #myButton {
+            font-size: 12px;
+        }
+        """
+
+    def test_event_rule_added(self) -> None:
+        """
+        Test the rule_added event.
+        """
+        rules_added: List[QSSRule] = []
+        self.parser.on("rule_added", lambda rule: rules_added.append(rule))
+        self.parser.parse(self.qss)
+        self.assertEqual(len(rules_added), 2, "Should trigger rule_added for each rule")
+        selectors: set[str] = {rule.selector for rule in rules_added}
+        self.assertEqual(
+            selectors, {"QPushButton", "#myButton"}, "Should capture all selectors"
+        )
+
+    def test_event_error_found(self) -> None:
+        """
+        Test the error_found event.
+        """
+        errors_found: List[str] = []
+        self.parser.on("error_found", lambda error: errors_found.append(error))
+        qss: str = """
+        QPushButton {
+            color: blue
+        }
+        """
+        self.parser.check_format(qss)
+        self.assertEqual(len(errors_found), 1, "Should trigger error_found")
+        self.assertIn("Property missing ';'", errors_found[0])
+
+    def test_multiple_event_handlers(self) -> None:
+        """
+        Test multiple handlers for the rule_added event.
+        """
+        rules_added_1: List[QSSRule] = []
+        rules_added_2: List[QSSRule] = []
+        self.parser.on("rule_added", lambda rule: rules_added_1.append(rule))
+        self.parser.on("rule_added", lambda rule: rules_added_2.append(rule))
+        self.parser.parse(self.qss)
+        self.assertEqual(
+            len(rules_added_1), 2, "First handler should capture all rules"
+        )
+        self.assertEqual(
+            len(rules_added_2), 2, "Second handler should capture all rules"
+        )
+
+    def test_event_error_found_multiple(self) -> None:
+        """
+        Test multiple handlers for the error_found event.
+        """
+        errors_found_1: List[str] = []
+        errors_found_2: List[str] = []
+        self.parser.on("error_found", lambda error: errors_found_1.append(error))
+        self.parser.on("error_found", lambda error: errors_found_2.append(error))
+        qss: str = """
+        QPushButton {
+            color: blue
+        }
+        """
+        self.parser.check_format(qss)
+        self.assertEqual(len(errors_found_1), 1, "First handler should capture error")
+        self.assertEqual(len(errors_found_2), 1, "Second handler should capture error")
+
+    def test_event_rule_added_with_pseudo(self) -> None:
+        """
+        Test the rule_added event with pseudo-states and pseudo-elements.
+        """
+        qss: str = """
+        QPushButton {
+            color: blue;
+        }
+        #myButton {
+            font-size: 12px;
+        }
+        QPushButton:hover {
+            background: green;
+        }
+        QScrollBar::vertical {
+            background: yellow;
+        }
+        """
+        rules_added: List[QSSRule] = []
+        self.parser.on("rule_added", lambda rule: rules_added.append(rule))
+        self.parser.parse(qss)
+        self.assertEqual(
+            len(rules_added),
+            5,
+            "Should trigger rule_added for each rule including base rules",
+        )
+        selectors: set[str] = {rule.selector for rule in rules_added}
+        self.assertEqual(
+            selectors,
+            {
+                "QPushButton",
+                "#myButton",
+                "QPushButton:hover",
+                "QScrollBar::vertical",
+                "QPushButton",
+            },
+            "Should capture all selectors including base rule for pseudo-state",
+        )
+
+    def test_event_rule_added_multiple_selectors(self) -> None:
+        """
+        Test the rule_added event for a rule with multiple selectors.
+        """
+        qss: str = """
+        QPushButton, QFrame {
+            color: blue;
+        }
+        """
+        rules_added: List[QSSRule] = []
+        self.parser.on("rule_added", lambda rule: rules_added.append(rule))
+        self.parser.parse(qss)
+        self.assertEqual(
+            len(rules_added), 2, "Should trigger rule_added for each selector"
+        )
+        selectors: set[str] = {rule.selector for rule in rules_added}
+        self.assertEqual(
+            selectors, {"QPushButton", "QFrame"}, "Should capture all selectors"
+        )
 
 
 if __name__ == "__main__":
