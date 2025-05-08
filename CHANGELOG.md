@@ -1,3 +1,31 @@
+## [0.1.2] - 2025-05-08
+
+qss-parser v0.1.2
+
+### Overview
+Version 0.1.2 of qss-parser.
+
+## Changes
+- Update: requeriments and action ([44090df](https://github.com/OniMock/qss_parser/commit/44090dfba929949221eefd59f5674db45a10ba7b))
+- Update: for isort ([92c5330](https://github.com/OniMock/qss_parser/commit/92c533078bfb87ce7e8c8ad31da2a8f4f2e8d1a9))
+- Update: pytest-cov with stable version ([e0b6214](https://github.com/OniMock/qss_parser/commit/e0b621432e6038bac772e851b4270b6c33855b3b))
+- Update/Refactor: All code with new features ([16db550](https://github.com/OniMock/qss_parser/commit/16db550c2e580287224a0a1fe8149ecb6fe86d85))
+- Update: Unit tests with new features ([b212a84](https://github.com/OniMock/qss_parser/commit/b212a841642a289abe59613b106e4a3446e12323))
+- Update: readme.md with new features ([4ae10eb](https://github.com/OniMock/qss_parser/commit/4ae10eb8f78e3cf2660bfa53e1bb8999328dd373))
+- Update: Full example with new features ([cb9d034](https://github.com/OniMock/qss_parser/commit/cb9d0341943703503b8f82285c087a0d7730ed42))
+- Update: Full example with new features ([c9eaa10](https://github.com/OniMock/qss_parser/commit/c9eaa10e8d0190c572848bee510f3542dc5c3f86))
+- Update: Actions with more tests ([f0e7408](https://github.com/OniMock/qss_parser/commit/f0e74088b643cbcfdec2a9f068383405901ec1ca))
+- Update: gitignore ([77072cb](https://github.com/OniMock/qss_parser/commit/77072cb51a5960b4e27e58a240e862930d704762))
+- Add: all library for developer ([a6e9499](https://github.com/OniMock/qss_parser/commit/a6e94997b7458096a6885ebf6814ce452b1b1d39))
+- Update: pyproject with flake8, mypy, isort ([c182a2c](https://github.com/OniMock/qss_parser/commit/c182a2ccecfce489bc93c44a2c18e8551a8653bf))
+- Remove: config flake8 ([97d0f4c](https://github.com/OniMock/qss_parser/commit/97d0f4c8bf1e5d2b80694b5158eb49ba1087ad51))
+## Installation
+```bash
+pip install qss-parser==0.1.2
+```
+
+See the [README.md](README.md) for more details.
+
 ## [0.1.1] - 2025-05-01
 
 qss-parser v0.1.1

@@ -9,4 +9,4 @@ from .qss_parser import (  # noqa: F401
     QSSValidator,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
