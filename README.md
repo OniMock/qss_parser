@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/pypi/l/qss-parser)
 ![Build Status](https://github.com/OniMock/qss_parser/actions/workflows/ci.yml/badge.svg)
 
-**QSS Parser** is a lightweight and robust Python library designed to parse and validate Qt Style Sheets (QSS), the stylesheet language used by Qt applications to customize the appearance of widgets. It enables developers to validate QSS syntax, parse QSS into structured rules, and extract styles for specific Qt widgets based on their object names, class names, or additional selectors. This library is particularly useful for developers working with PyQt or PySide applications who need to manage and apply QSS styles programmatically.
+**QSS Parser** is a lightweight and robust Python library designed to parse and validate Qt Style Sheets (QSS), the stylesheet language used by Qt applications to customize the appearance of widgets. It enables developers to validate QSS syntax, parse QSS into structured rules, and extract styles for specific Qt widgets based on their object names, class names, attributes, or additional selectors. This library is particularly useful for developers working with PyQt or PySide applications who need to manage and apply QSS styles programmatically.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@
   - [Complete Example](#complete-example)
   - [Basic Example](#basic-example)
   - [Validating QSS Syntax](#validating-qss-syntax)
-  - [Parsing QSS and Extracting Styles](#parsing-qss-and-extracting-styles)
+  - [Parsing QSS with Attribute Selectors](#parsing-qss-with-attribute-selectors)
   - [Integration with Qt Applications](#integration-with-qt-applications)
 - [API Reference](#api-reference)
 - [Contributing](#contributing)
@@ -28,11 +28,11 @@
 
 - **QSS Validation**: Checks QSS for syntax errors such as missing semicolons, unclosed braces, properties outside blocks, and invalid selectors.
 - **Structured Parsing**: Converts QSS into a structured representation with `QSSRule` and `QSSProperty` objects, making it easy to manipulate styles programmatically.
-- **Style Extraction**: Retrieves styles for Qt widgets based on their object names, class names, pseudo-states, pseudo-elements, or additional selectors.
-- **Flexible Selector Support**: Handles complex selectors, including pseudo-states (e.g., `:hover`), pseudo-elements (e.g., `::handle`), and composite selectors.
+- **Style Extraction**: Retrieves styles for Qt widgets based on their object names, class names, attribute selectors (e.g., `[data-value="complex string"]`), pseudo-states (e.g., `:hover`), or pseudo-elements (e.g., `::handle`).
+- **Advanced Selector Support**: Handles complex selectors, including attribute selectors with spaces or special characters, composite selectors (e.g., `QPushButton #myButton`), and normalized selector processing to ensure consistent parsing.
 - **Lightweight and Dependency-Free**: No external dependencies required, ensuring easy integration into any Python project.
-- **Extensible Design**: Built with a modular structure to support future enhancements, such as advanced selector matching or QSS generation.
-- **Comprehensive Testing**: Includes a robust test suite to ensure reliability and correctness.
+- **Extensible Design**: Built with a plugin-based architecture to support custom parsing logic and future enhancements.
+- **Comprehensive Testing**: Includes a robust test suite covering validation, parsing, and style extraction, ensuring reliability and correctness.
 
 ## Installation
 
@@ -60,7 +60,7 @@ The `qss-parser` library provides a simple and intuitive API for validating, par
 
 ### Complete Example
 
-Check complete example [here](https://github.com/OniMock/qss_parser/tree/main/tests)
+Check the complete example [here](https://github.com/OniMock/qss_parser/tree/main/tests).
 
 ### Basic Example
 
@@ -136,9 +136,9 @@ for error in errors:
 Error on line 3: Property missing ';': color: blue
 ```
 
-### Parsing QSS and Extracting Styles
+### Parsing QSS with Attribute Selectors
 
-The `parse` method converts QSS into a list of `QSSRule` objects, and `get_styles_for` retrieves styles for a widget with customizable options.
+This example demonstrates parsing QSS with complex attribute selectors and extracting styles for a widget.
 
 ```python
 from qss_parser import QSSParser
@@ -146,37 +146,28 @@ from unittest.mock import Mock
 
 # Create a mock widget
 widget = Mock()
-widget.objectName.return_value = "titleLeftApp"
-widget.metaObject.return_value.className.return_value = "QWidget"
+widget.objectName.return_value = "myButton"
+widget.metaObject.return_value.className.return_value = "QPushButton"
 
 parser = QSSParser()
 qss = """
-#titleLeftApp {
-    font: 12pt "Segoe UI Semibold";
-}
-QWidget {
-    background: gray;
+QPushButton[data-value="complex string with spaces"] {
+    color: blue;
 }
 """
 
 parser.parse(qss)
-styles = parser.get_styles_for(
-    widget,
-    include_class_if_object_name=True,
-    fallback_class="QFrame",
-    additional_selectors=[".customClass"]
-)
+styles = parser.get_styles_for(widget)
+print("Styles for widget:")
 print(styles)
 ```
 
 **Output**:
 
 ```
-#titleLeftApp {
-    font: 12pt "Segoe UI Semibold";
-}
-QWidget {
-    background: gray;
+Styles for widget:
+QPushButton[data-value="complex string with spaces"] {
+    color: blue;
 }
 ```
 
@@ -234,7 +225,8 @@ The main class for parsing and managing QSS.
 - **Methods**:
   - `check_format(qss_text: str) -> List[str]`: Validates QSS syntax and returns a list of error messages.
   - `parse(qss_text: str)`: Parses QSS into a list of `QSSRule` objects.
-  - `get_styles_for(widget, fallback_class: Optional[str] = None, additional_selectors: Optional[List[str]] = None, include_class_if_object_name: bool = False) -> str`: Retrieves QSS styles for a widget based on its object name, class name, and optional parameters.
+  - `get_styles_for(widget, fallback_class: Optional[str] = None, additional_selectors: Optional[List[str]] = None, include_class_if_object_name: bool = False) -> str`: Retrieves QSS styles for a widget based on its object name, class name, attribute selectors, and optional parameters.
+  - `on(event: str, handler: Callable[[Any], None])`: Registers an event handler for parser events (`rule_added`, `error_found`).
   - `__repr__() -> str`: Returns a string representation of all parsed rules.
 
 ### `QSSRule` Class
@@ -243,21 +235,48 @@ Represents a QSS rule with a selector and properties.
 
 - **Attributes**:
 
-  - `selector: str`: The rule's selector (e.g., `#myButton`, `QPushButton:hover`).
+  - `selector: str`: The rule's selector (e.g., `#myButton`, `QPushButton[data-value="value"]`).
   - `properties: List[QSSProperty]`: List of properties in the rule.
   - `original: str`: The original QSS text for the rule.
+  - `attributes: List[str]`: List of attribute selectors (e.g., `[data-value="complex string"]`).
+  - `pseudo_states: List[str]`: List of pseudo-states (e.g., `hover`, `focus`).
+  - `object_name: Optional[str]`: The object name if present (e.g., `myButton` for `#myButton`).
+  - `class_name: Optional[str]`: The class name if present (e.g., `QPushButton`).
 
 - **Methods**:
   - `add_property(name: str, value: str)`: Adds a property to the rule.
-  - `clone_without_pseudo_elements() -> QSSRule`: Creates a copy of the rule without pseudo-elements.
+  - `clone_without_pseudo_elements() -> QSSRule`: Creates a copy of the rule without pseudo-elements or pseudo-states.
 
 ### `QSSProperty` Class
 
 Represents a single QSS property.
 
 - **Attributes**:
+
   - `name: str`: The property name (e.g., `color`).
   - `value: str`: The property value (e.g., `blue`).
+
+- **Methods**:
+  - `to_dict() -> QSSPropertyDict`: Converts the property to a dictionary.
+
+### `QSSValidator` Class
+
+Validates QSS syntax.
+
+- **Methods**:
+  - `check_format(qss_text: str) -> List[str]`: Validates QSS syntax and returns a list of error messages.
+
+### `QSSStyleSelector` Class
+
+Selects and formats QSS styles for widgets.
+
+- **Methods**:
+  - `get_styles_for(rules: List[QSSRule], widget, ...)`: Retrieves styles for a widget from a list of rules.
+
+### `QSSParserPlugin` and `DefaultQSSParserPlugin`
+
+- `QSSParserPlugin`: Abstract base class for parser plugins.
+- `DefaultQSSParserPlugin`: Default plugin for parsing QSS, handling selectors and properties with advanced normalization for attribute selectors.
 
 ## Contributing
 
@@ -274,7 +293,7 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 ### Code Style
 
 - Follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code style.
-- Use type hints where applicable (per [PEP 484](https://www.python.org/dev/peps/pep-0484/)).
+- Use type hints where applicable (per [PEP 484](https://www.python.org/dev/peps/pep-484/)).
 - Write clear, concise docstrings for all public methods and classes.
 
 ## Testing
@@ -302,8 +321,8 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 If you encounter issues or have questions, please:
 
-- **Open an Issue**: Report bugs or request features on the [GitHub Issues page](https://github.com/yourusername/qss-parser/issues).
-- **Contact the Maintainer**: Reach out to [Your Name](mailto:your.email@example.com) for direct support.
+- **Open an Issue**: Report bugs or request features on the [GitHub Issues page](https://github.com/OniMock/qss_parser/issues).
+- **Contact the Maintainer**: Reach out to [Onimock](mailto:onimock@gmail.com) for direct support.
 
 ## Acknowledgements
 
