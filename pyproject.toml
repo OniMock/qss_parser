@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qss-parser"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name = "Onimock", email = "onimock@gmail.com" }]
 description = "A parser Python to Qt Style Sheets (QSS)"
 readme = "README.md"
@@ -22,3 +22,26 @@ dependencies = []
 
 [tool.black]
 line-length = 88
+target-version = ["py36"]
+
+[tool.mypy]
+python_version = "3.8"
+files = ["src/qss_parser/qss_parser.py", "tests/test_qss_parser.py"]
+strict = true
+show_error_codes = true
+disallow_any_unimported = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["unittest.mock", "logging"]
+ignore_missing_imports = true
+
+[tool.flake8]
+max-line-length = 88
+ignore = ["E203", "W503", "E501", "E302"]
+per-file-ignores = ["tests/*:E402"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
