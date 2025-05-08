@@ -1,5 +1,30 @@
-#myButton { background-color: #4CAF50; color: white; font: bold 14px "Arial"; border-radius: 5px; padding: 10px; }
+/* Button styles */
+#myButton {
+    color: red;
+    font: bold 14px;
+}
+QPushButton[data-value="complex string with spaces"] {
+    background: blue;
+    border: 2px solid white;
+}
+QPushButton:hover {
+    background: darkblue;
+}
 
-#myButton:hover { background-color: #45a049; }
+/* Label styles */
+#myLabel {
+    color: green;
+    font: 12pt "Arial";
+}
+QLabel {
+    background: lightgray;
+}
 
-QLabel { color: #333; font: 12px "Segoe UI"; background-color: #f0f0f0; padding: 5px; }
+/* Custom widget styles */
+QWidget[theme="dark"] {
+    background: #333333;
+    border-radius: 5px;
+}
+.customClass {
+    border: 1px dashed yellow;
+}
