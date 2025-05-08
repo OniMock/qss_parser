@@ -35,9 +35,11 @@ jobs:
 
       - name: Run linters
         run: |
-          pip install flake8 black
+          pip install flake8 black isort mypy flake8-pyproject
           flake8 src tests
           black --check src tests
+          isort --check-only src tests
+          mypy src
 
       - name: Run tests with coverage
         run: |
