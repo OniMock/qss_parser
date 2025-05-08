@@ -195,3 +195,6 @@ dist/ build/ *.egg-info/
 #Miscellaneous
 
 *.log *.bak *.swp
+
+#Qodo
+.qodo
