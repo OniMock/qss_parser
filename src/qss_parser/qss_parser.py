@@ -1021,7 +1021,7 @@ class SelectorPlugin(QSSParserPlugin):
 
     def _merge_or_append_rule(self, rule: QSSRule, state: ParserState) -> None:
         """
-        Merge a rule with existing rules or append it to the rule list.
+        Merge a rule with existing rules or append it to the rule list, ensuring no duplicates.
 
         Args:
             rule: The rule to merge or append.
@@ -1030,10 +1030,11 @@ class SelectorPlugin(QSSParserPlugin):
         self._logger.debug(f"Merging/appending rule: {rule.selector}")
         for existing_rule in state.rules:
             if existing_rule.selector == rule.selector:
-                existing_prop_names = {p.name for p in existing_rule.properties}
+                prop_map = {p.name: p for p in existing_rule.properties}
                 for prop in rule.properties:
-                    if prop.name not in existing_prop_names:
-                        existing_rule.properties.append(prop)
+                    if prop.name not in prop_map:
+                        prop_map[prop.name] = prop
+                existing_rule.properties = list(prop_map.values())
                 existing_rule.original = QSSFormatter.format_rule(
                     existing_rule.selector, existing_rule.properties
                 )
@@ -1049,6 +1050,19 @@ class SelectorPlugin(QSSParserPlugin):
             and "," not in rule.selector
         ):
             base_rule = rule.clone_without_pseudo_elements()
+            for existing_rule in state.rules:
+                if existing_rule.selector == base_rule.selector:
+                    prop_map = {p.name: p for p in existing_rule.properties}
+                    for prop in base_rule.properties:
+                        if prop.name not in prop_map:
+                            prop_map[prop.name] = prop
+                    existing_rule.properties = list(prop_map.values())
+                    existing_rule.original = QSSFormatter.format_rule(
+                        existing_rule.selector, existing_rule.properties
+                    )
+                    for handler in self._parser._event_handlers["rule_added"]:
+                        handler(existing_rule)
+                    return
             state.rules.append(base_rule)
             for handler in self._parser._event_handlers["rule_added"]:
                 handler(base_rule)

@@ -339,7 +339,7 @@ class TestQSSParserParsing(unittest.TestCase):
         Test parsing valid QSS text.
         """
         self.assertEqual(
-            len(self.parser._state.rules), 8, "Should parse all rules correctly"
+            len(self.parser._state.rules), 7, "Should parse all rules correctly"
         )
 
     def test_parse_empty_qss(self) -> None:
@@ -1165,7 +1165,7 @@ QFrame {
         parser.parse(qss)
         self.assertEqual(
             len(parser._state.rules),
-            2,
+            1,
             "Should parse one rule and one base rule without pseudo-states",
         )
         self.assertEqual(
@@ -1211,7 +1211,7 @@ QFrame {
         parser.parse(qss)
         self.assertEqual(
             len(parser._state.rules),
-            2,
+            1,
             "Should parse one rule and one base rule without pseudo-states",
         )
         self.assertEqual(
@@ -1236,6 +1236,103 @@ QFrame {
         expected: str = """QPushButton #btn_save[selected="true"]:hover {
     border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
     background-color: rgb(98, 114, 164);
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_attribute_selector_with_class_and_id_with_extense_qss(
+        self,
+    ) -> None:
+        """
+        Test style retrieval for a selector with class and id with attribute and pseudo-state.
+        """
+        self.maxDiff = None
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save[selected="true"]:hover {
+            color: red;
+            background-color: rgb(97, 114, 164);
+        }
+        QPushButton #btn_save[selected="true"]:hover::pressed {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save[selected="true"]:hover::pressed {
+            color: blue;
+            font-size: 10px;
+            background-color: rgb(98, 114, 152);
+        }
+        QPushButton #btn_save {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save {
+            color: blue;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save:vertical {
+            color: orange;
+            width: 10px;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save:vertical {
+            color: blue;
+            font-size: 10px;
+            background-color: rgb(98, 114, 164);
+        }
+        """
+        errors: List[str] = parser.check_format(qss)
+        self.assertEqual(
+            errors, [], "Valid QSS with attribute selector should return no errors"
+        )
+
+        parser.parse(qss)
+        self.assertEqual(
+            len(parser._state.rules),
+            4,
+            "Should parse one rule and one base rule without pseudo-states",
+        )
+        self.assertEqual(
+            parser._state.rules[0].selector,
+            'QPushButton #btn_save[selected="true"]:hover',
+        )
+        self.assertEqual(len(parser._state.rules[0].properties), 3)
+        self.assertEqual(parser._state.rules[0].properties[0].name, "border-left")
+        self.assertEqual(
+            parser._state.rules[0].properties[0].value,
+            "22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0))",
+        )
+        self.assertEqual(parser._state.rules[0].properties[1].name, "background-color")
+        self.assertEqual(
+            parser._state.rules[0].properties[1].value, "rgb(98, 114, 164)"
+        )
+
+        widget: Mock = Mock()
+        widget.objectName.return_value = "btn_save"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton #btn_save {
+    color: red;
+    background-color: rgb(98, 114, 164);
+}
+QPushButton #btn_save:vertical {
+    color: orange;
+    width: 10px;
+    background-color: rgb(98, 114, 164);
+    font-size: 10px;
+}
+QPushButton #btn_save[selected="true"]:hover {
+    border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+    background-color: rgb(98, 114, 164);
+    color: red;
+}
+QPushButton #btn_save[selected="true"]:hover::pressed {
+    color: red;
+    background-color: rgb(98, 114, 164);
+    font-size: 10px;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
@@ -1271,7 +1368,7 @@ QFrame {
         parser.parse(qss)
         self.assertEqual(
             len(parser._state.rules),
-            7,
+            5,
             "Should parse one rule and one base rule without pseudo-states",
         )
         self.assertEqual(
