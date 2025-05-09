@@ -87,6 +87,108 @@ class QSSProperty:
         return {"name": self.name, "value": self.value}
 
 
+class SelectorUtils:
+    """
+    Utility class for parsing and normalizing QSS selectors.
+    """
+
+    _ATTRIBUTE_PATTERN = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
+
+    @staticmethod
+    def extract_attributes(selector: str) -> List[str]:
+        """
+        Extracts attribute selectors from a QSS selector.
+
+        Args:
+            selector (str): The selector to parse (e.g., 'QPushButton[data-value="complex"]').
+
+        Returns:
+            List[str]: List of attribute selectors (e.g., ['[data-value="complex"]']).
+        """
+        return re.findall(SelectorUtils._ATTRIBUTE_PATTERN, selector)
+
+    @staticmethod
+    def normalize_selector(selector: str) -> str:
+        """
+        Normalizes a selector by removing extra spaces around combinators and between parts,
+        while preserving spaces within attribute selectors.
+
+        Args:
+            selector (str): The selector to normalize.
+
+        Returns:
+            str: The normalized selector.
+
+        Example:
+            >>> SelectorUtils.normalize_selector("QWidget   >   QPushButton")
+            'QWidget > QPushButton'
+            >>> SelectorUtils.normalize_selector("QPushButton [data-value=\\"complex string\\"]")
+            'QPushButton [data-value="complex string"]'
+        """
+        selectors = [s.strip() for s in selector.split(",") if s.strip()]
+        normalized_selectors = []
+        for sel in selectors:
+            # Protect attribute selectors
+            attributes = SelectorUtils.extract_attributes(sel)
+            temp_placeholders = [f"__ATTR_{i}__" for i in range(len(attributes))]
+            temp_sel = sel
+            for placeholder, attr in zip(temp_placeholders, attributes):
+                temp_sel = temp_sel.replace(attr, placeholder)
+
+            # Normalize spaces
+            temp_sel = re.sub(r"\s*>\s*", " > ", temp_sel)
+            temp_sel = re.sub(r"\s+", " ", temp_sel)
+            temp_sel = temp_sel.strip()
+
+            # Restore attributes
+            for placeholder, attr in zip(temp_placeholders, attributes):
+                temp_sel = temp_sel.replace(placeholder, attr)
+
+            normalized_selectors.append(temp_sel)
+        return ", ".join(normalized_selectors)
+
+    @staticmethod
+    def parse_selector(
+        selector: str,
+    ) -> Tuple[Optional[str], Optional[str], List[str], List[str]]:
+        """
+        Parses a selector into object name, class name, attributes, and pseudo-states.
+
+        Args:
+            selector (str): The selector to parse.
+
+        Returns:
+            Tuple[Optional[str], Optional[str], List[str], List[str]]: A tuple containing:
+                - Object name (if selector contains '#').
+                - Class name (if selector does not start with '#').
+                - List of attribute selectors (e.g., ['[selected="true"]']).
+                - List of pseudo-states (e.g., ['hover', 'focus']).
+        """
+        object_name: Optional[str] = None
+        class_name: Optional[str] = None
+        attributes = SelectorUtils.extract_attributes(selector)
+        pseudo_states: List[str] = []
+
+        # Remove attributes and pseudo-elements
+        selector_clean = re.sub(SelectorUtils._ATTRIBUTE_PATTERN, "", selector)
+        selector_clean = re.sub(r"::\w+", "", selector_clean)
+        parts = selector_clean.split(":")
+        main_selector = parts[0].strip()
+        pseudo_states = [p.strip() for p in parts[1:] if p.strip()]
+
+        # Handle composite selectors
+        selector_parts = [
+            part.strip() for part in re.split(r"\s+", main_selector) if part.strip()
+        ]
+        for part in selector_parts:
+            if part.startswith("#"):
+                object_name = part[1:]
+            elif part and not class_name:
+                class_name = part
+
+        return object_name, class_name, attributes, pseudo_states
+
+
 class QSSRule:
     """
     Represents a QSS rule with a selector and a list of properties.
@@ -103,6 +205,10 @@ class QSSRule:
         self.selector: str = selector.strip()
         self.properties: List[QSSProperty] = []
         self.original: str = original or ""
+        self.object_name: Optional[str] = None
+        self.class_name: Optional[str] = None
+        self.attributes: List[str] = []
+        self.pseudo_states: List[str] = []
         self._parse_selector()
 
     def _parse_selector(self) -> None:
@@ -115,34 +221,12 @@ class QSSRule:
             - attributes: List of attribute selectors (e.g., '[selected="true"]').
             - pseudo_states: List of pseudo-states (e.g., ['hover', 'focus']).
         """
-        self.object_name: Optional[str] = None
-        self.class_name: Optional[str] = None
-        self.attributes: List[str] = []
-        self.pseudo_states: List[str] = []
-
-        # Pattern for attribute selectors, e.g., [key="value"]
-        attribute_pattern = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
-        attributes = re.findall(attribute_pattern, self.selector)
-        self.attributes = attributes
-
-        # Remove attributes and pseudo-elements/states for main selector parsing
-        selector_clean = re.sub(attribute_pattern, "", self.selector)
-        selector_clean = re.sub(r"::\w+", "", selector_clean)  # Remove pseudo-elements
-        parts = selector_clean.split(":")
-        main_selector = parts[0].strip()
-        self.pseudo_states = [p.strip() for p in parts[1:] if p.strip()]
-
-        # Handle composite selectors (e.g., "QPushButton #myButton")
-        selector_parts = [
-            part.strip() for part in re.split(r"\s+", main_selector) if part.strip()
-        ]
-        for part in selector_parts:
-            if part.startswith("#"):
-                self.object_name = part[1:]
-            elif (
-                part and not self.class_name
-            ):  # Take the first non-ID part as class_name
-                self.class_name = part
+        (
+            self.object_name,
+            self.class_name,
+            self.attributes,
+            self.pseudo_states,
+        ) = SelectorUtils.parse_selector(self.selector)
 
     def add_property(self, name: str, value: str) -> None:
         """
@@ -217,7 +301,7 @@ class QSSRule:
 
 class ParserState:
     """
-    Holds the state of the QSS parser, including rules, current rule, and parsing context.
+    Holds the state of the QSS parser, including rules and parsing context.
     """
 
     def __init__(self) -> None:
@@ -225,7 +309,6 @@ class ParserState:
         Initializes the parser state.
         """
         self.rules: List[QSSRule] = []
-        self.current_rule: Optional[QSSRule] = None
         self.buffer: str = ""
         self.in_comment: bool = False
         self.in_rule: bool = False
@@ -238,7 +321,6 @@ class ParserState:
         Resets the parser state to its initial values.
         """
         self.rules = []
-        self.current_rule = None
         self.buffer = ""
         self.in_comment = False
         self.in_rule = False
@@ -269,12 +351,6 @@ class QSSValidator:
         Returns:
             List[str]: List of error messages in the format: "Error on line {num}: {description}: {content}".
                        Returns an empty list if the format is correct.
-
-        Example:
-            >>> validator = QSSValidator()
-            >>> qss = "QPushButton { color: blue }"
-            >>> validator.check_format(qss)
-            ['Error on line 1: Property missing ';': color: blue']
         """
         errors: List[str] = []
         lines = qss_text.splitlines()
@@ -334,7 +410,7 @@ class QSSValidator:
                     last_line_num = line_num
                     continue
 
-                property_buffer, new_errors = self._process_property_line_for_format(
+                property_buffer, new_errors = self._process_property_line(
                     line, property_buffer, line_num
                 )
                 errors.extend(new_errors)
@@ -489,7 +565,7 @@ class QSSValidator:
         """
         return ":" in line and ";" in line
 
-    def _process_property_line_for_format(
+    def _process_property_line(
         self, line: str, buffer: str, line_num: int
     ) -> Tuple[str, List[str]]:
         """
@@ -595,48 +671,34 @@ class QSSStyleSelector:
 
         Returns:
             str: The concatenated QSS styles for the widget.
-
-        Example:
-            >>> selector = QSSStyleSelector()
-            >>> widget = Mock()
-            >>> widget.objectName.return_value = "myButton"
-            >>> widget.metaObject.return_value.className.return_value = "QPushButton"
-            >>> rules = [QSSRule("#myButton", properties=[QSSProperty("color", "red")])]
-            >>> selector.get_styles_for(rules, widget)
-            '#myButton {\n    color: red;\n}'
         """
         object_name: str = widget.objectName()
         class_name: str = widget.metaObject().className()
         styles: Set[QSSRule] = set()
-        object_name_styles: Set[QSSRule] = set()
-        class_name_styles: Set[QSSRule] = set()
 
         self._logger.debug(
             f"Retrieving styles for widget: objectName={object_name}, className={class_name}"
         )
 
         if object_name:
-            object_name_styles = set(
+            styles.update(
                 self._get_rules_for_selector(
                     rules, f"#{object_name}", object_name, class_name
                 )
             )
-            styles.update(object_name_styles)
             if include_class_if_object_name:
-                class_name_styles = set(
+                styles.update(
                     self._get_rules_for_selector(
                         rules, class_name, object_name, class_name
                     )
                 )
-                styles.update(class_name_styles)
 
-        if not object_name or not object_name_styles:
-            class_name_styles = set(
+        if not object_name or not styles:
+            styles.update(
                 self._get_rules_for_selector(rules, class_name, object_name, class_name)
             )
-            styles.update(class_name_styles)
 
-        if fallback_class and not object_name_styles and not class_name_styles:
+        if fallback_class and not styles:
             styles.update(
                 self._get_rules_for_selector(
                     rules, fallback_class, object_name, class_name
@@ -664,7 +726,7 @@ class QSSStyleSelector:
 
         Args:
             rules (List[QSSRule]): List of QSSRule objects to search.
-            selector (str): The selector to match (e.g., 'QPushButton', '#myButton', 'QWidget #myWidget QPushButton').
+            selector (str): The selector to match (e.g., 'QPushButton', '#myButton').
             object_name (str): The objectName of the widget.
             class_name (str): The className of the widget.
 
@@ -673,7 +735,6 @@ class QSSStyleSelector:
         """
         matching_rules: Set[QSSRule] = set()
         base_selector = selector.split("::")[0].split(":")[0].strip()
-        attribute_pattern = r'\[\w+="[^"]*"\]'
 
         for rule in rules:
             rule_selectors = [s.strip() for s in rule.selector.split(",")]
@@ -682,8 +743,9 @@ class QSSStyleSelector:
                     matching_rules.add(rule)
                     continue
 
-                sel_without_attrs = re.sub(attribute_pattern, "", sel).strip()
-
+                sel_without_attrs = re.sub(
+                    SelectorUtils._ATTRIBUTE_PATTERN, "", sel
+                ).strip()
                 if not re.search(r"[> ]+", sel_without_attrs):
                     part_base = sel_without_attrs.split("::")[0].split(":")[0].strip()
                     if part_base == base_selector:
@@ -756,47 +818,6 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         self._parser: "QSSParser" = parser
         self._logger: logging.Logger = logging.getLogger(__name__)
 
-    def _normalize_selector(self, selector: str) -> str:
-        """
-        Normalizes a selector by removing extra spaces around combinators and between parts,
-        while preserving spaces within attribute selectors.
-
-        Args:
-            selector (str): The selector to normalize.
-
-        Returns:
-            str: The normalized selector.
-
-        Example:
-            >>> plugin = DefaultQSSParserPlugin(QSSParser())
-            >>> plugin._normalize_selector("QWidget   >   QPushButton")
-            'QWidget > QPushButton'
-            >>> plugin._normalize_selector("QPushButton [data-value=\\"complex string\\"]")
-            'QPushButton [data-value="complex string"]'
-        """
-        selectors = [s.strip() for s in selector.split(",") if s.strip()]
-        normalized_selectors = []
-        for sel in selectors:
-            # Protect attribute selectors by temporarily replacing them
-            attribute_pattern = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
-            attributes = re.findall(attribute_pattern, sel)
-            temp_placeholders = [f"__ATTR_{i}__" for i in range(len(attributes))]
-            temp_sel = sel
-            for placeholder, attr in zip(temp_placeholders, attributes):
-                temp_sel = temp_sel.replace(attr, placeholder)
-
-            # Normalize spaces around combinators
-            temp_sel = re.sub(r"\s*>\s*", " > ", temp_sel)
-            temp_sel = re.sub(r"\s+", " ", temp_sel)
-            temp_sel = temp_sel.strip()
-
-            # Restore attributes
-            for placeholder, attr in zip(temp_placeholders, attributes):
-                temp_sel = temp_sel.replace(placeholder, attr)
-
-            normalized_selectors.append(temp_sel)
-        return ", ".join(normalized_selectors)
-
     def process_line(self, line: str, state: ParserState) -> bool:
         """
         Processes a line of QSS text using the default parsing logic.
@@ -821,16 +842,15 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
             return True
         if line.endswith("{") and not state.in_rule:
             selector_part = line[:-1].strip()
-            normalized_selector = self._normalize_selector(selector_part)
+            normalized_selector = SelectorUtils.normalize_selector(selector_part)
             selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
             if not selectors:
                 return True
             state.current_selectors = selectors
             state.original_selector = normalized_selector
-            state.current_rules = []
-            for sel in selectors:
-                rule = QSSRule(sel, original=f"{sel} {{\n")
-                state.current_rules.append(rule)
+            state.current_rules = [
+                QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
+            ]
             state.in_rule = True
             return True
         if line == "}" and state.in_rule:
@@ -851,7 +871,7 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
                 parts = full_line.split(";")
                 for part in parts[:-1]:
                     if part.strip():
-                        self._process_property_line(part.strip() + ";", state)
+                        self._process_property(part.strip() + ";", state)
                 if parts[-1].strip():
                     state.buffer = parts[-1].strip()
             else:
@@ -883,22 +903,21 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         if not match:
             return
         selector, properties = match.groups()
-        normalized_selector = self._normalize_selector(selector.strip())
+        normalized_selector = SelectorUtils.normalize_selector(selector.strip())
         selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
         if not selectors:
             return
         state.current_selectors = selectors
         state.original_selector = normalized_selector
-        state.current_rules = []
-        for sel in selectors:
-            rule = QSSRule(sel, original=f"{sel} {{\n")
-            state.current_rules.append(rule)
+        state.current_rules = [
+            QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
+        ]
         if properties.strip():
             prop_parts = properties.split(";")
             for part in prop_parts:
                 part = part.strip()
                 if part:
-                    self._process_property_line(part + ";", state)
+                    self._process_property(part + ";", state)
         for rule in state.current_rules:
             rule.original += "}\n"
             self._add_rule(rule, state)
@@ -906,7 +925,7 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         state.current_selectors = []
         state.original_selector = None
 
-    def _process_property_line(self, line: str, state: ParserState) -> None:
+    def _process_property(self, line: str, state: ParserState) -> None:
         """
         Processes a property line and adds it to the current rules.
 
@@ -977,15 +996,6 @@ class QSSParser:
         Args:
             plugins (Optional[List[QSSParserPlugin]]): List of plugins for custom parsing logic.
                                              If None, uses the default plugin.
-
-        Example:
-            >>> parser = QSSParser()
-            >>> qss = "QPushButton { color: blue; }"
-            >>> parser.parse(qss)
-            >>> print(parser)
-            QPushButton {
-                color: blue;
-            }
         """
         self._state: ParserState = ParserState()
         self._validator: QSSValidator = QSSValidator()
@@ -1004,14 +1014,6 @@ class QSSParser:
         Args:
             event (str): The event to listen for ('rule_added', 'error_found').
             handler (Callable[[Any], None]): The function to call when the event occurs.
-
-        Example:
-            >>> parser = QSSParser()
-            >>> parser.on("rule_added", lambda rule: print(f"New rule: {rule}"))
-            >>> parser.parse("QPushButton { color: blue; }")
-            New rule: QPushButton {
-                color: blue;
-            }
         """
         if event in self._event_handlers:
             self._event_handlers[event].append(handler)
@@ -1024,20 +1026,13 @@ class QSSParser:
         Args:
             qss_text (str): The QSS text to parse. Expected to be valid QSS syntax,
                            with selectors and properties separated by braces and semicolons.
-
-        Example:
-            >>> parser = QSSParser()
-            >>> qss = "QPushButton { color: blue; }"
-            >>> parser.parse(qss)
-            >>> print(parser.rules)
-            [QSSRule(selector='QPushButton', properties=[QSSProperty(name='color', value='blue')])]
         """
         self._reset()
         lines = qss_text.splitlines()
         for line in lines:
             self._process_line(line)
         if self._state.buffer.strip():
-            self._process_property_line(self._state.buffer)
+            self._process_property(self._state.buffer)
 
     def _reset(self) -> None:
         """
@@ -1057,7 +1052,7 @@ class QSSParser:
             if plugin.process_line(line, self._state):
                 break
 
-    def _process_property_line(self, line: str) -> None:
+    def _process_property(self, line: str) -> None:
         """
         Processes a property line and adds it to the current rules.
 
@@ -1066,7 +1061,7 @@ class QSSParser:
         """
         for plugin in self._plugins:
             if isinstance(plugin, DefaultQSSParserPlugin):
-                plugin._process_property_line(line, self._state)
+                plugin._process_property(line, self._state)
                 break
 
     def check_format(self, qss_text: str) -> List[str]:
@@ -1080,12 +1075,6 @@ class QSSParser:
         Returns:
             List[str]: List of error messages in the format: "Error on line {num}: {description}: {content}".
                        Returns an empty list if the format is correct.
-
-        Example:
-            >>> parser = QSSParser()
-            >>> qss = "QPushButton { color: blue }"
-            >>> parser.check_format(qss)
-            ['Error on line 1: Property missing ';': color: blue']
         """
         errors = self._validator.check_format(qss_text)
         for error in errors:
@@ -1111,15 +1100,6 @@ class QSSParser:
 
         Returns:
             str: The concatenated QSS styles for the widget.
-
-        Example:
-            >>> parser = QSSParser()
-            >>> widget = Mock()
-            >>> widget.objectName.return_value = "myButton"
-            >>> widget.metaObject.return_value.className.return_value = "QPushButton"
-            >>> parser.parse("#myButton { color: red; }")
-            >>> parser.get_styles_for(widget)
-            '#myButton {\n    color: red;\n}'
         """
         return self._style_selector.get_styles_for(
             self._state.rules,
