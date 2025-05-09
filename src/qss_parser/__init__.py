@@ -1,11 +1,12 @@
 from .qss_parser import (  # noqa: F401
-    DefaultQSSParserPlugin,
+    QSSFormatter,
     QSSParser,
     QSSParserPlugin,
     QSSProperty,
     QSSPropertyDict,
     QSSRule,
     QSSStyleSelector,
+    QSSSyntaxChecker,
     QSSValidator,
 )
 
