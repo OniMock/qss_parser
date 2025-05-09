@@ -6,12 +6,12 @@ from typing import (
     Callable,
     Dict,
     List,
+    Match,
     Optional,
     Protocol,
     Set,
     Tuple,
     TypedDict,
-    Match,
 )
 
 
