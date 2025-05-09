@@ -16,6 +16,7 @@
   - [Basic Example](#basic-example)
   - [Validating QSS Syntax](#validating-qss-syntax)
   - [Parsing QSS with Attribute Selectors](#parsing-qss-with-attribute-selectors)
+  - [Parsing QSS with Variables](#parsing-qss-with-variables)
   - [Integration with Qt Applications](#integration-with-qt-applications)
 - [API Reference](#api-reference)
 - [Contributing](#contributing)
@@ -27,12 +28,13 @@
 ## Features
 
 - **QSS Validation**: Checks QSS for syntax errors such as missing semicolons, unclosed braces, properties outside blocks, and invalid selectors.
+- **Variable Support**: Parses `@variables` blocks, resolves variable references (e.g., `var(--primary-color)`), and supports nested variables for flexible style definitions.
 - **Structured Parsing**: Converts QSS into a structured representation with `QSSRule` and `QSSProperty` objects, making it easy to manipulate styles programmatically.
 - **Style Extraction**: Retrieves styles for Qt widgets based on their object names, class names, attribute selectors (e.g., `[data-value="complex string"]`), pseudo-states (e.g., `:hover`), or pseudo-elements (e.g., `::handle`).
 - **Advanced Selector Support**: Handles complex selectors, including attribute selectors with spaces or special characters, composite selectors (e.g., `QPushButton #myButton`), and normalized selector processing to ensure consistent parsing.
 - **Lightweight and Dependency-Free**: No external dependencies required, ensuring easy integration into any Python project.
 - **Extensible Design**: Built with a plugin-based architecture to support custom parsing logic and future enhancements.
-- **Comprehensive Testing**: Includes a robust test suite covering validation, parsing, and style extraction, ensuring reliability and correctness.
+- **Comprehensive Testing**: Includes a robust test suite covering validation, parsing, style extraction, and variable resolution, ensuring reliability and correctness.
 
 ## Installation
 
@@ -171,6 +173,58 @@ QPushButton[data-value="complex string with spaces"] {
 }
 ```
 
+### Parsing QSS with Variables
+
+This example demonstrates parsing QSS with a `@variables` block, including nested variables, and extracting styles for a widget.
+
+```python
+from qss_parser import QSSParser
+from unittest.mock import Mock
+
+# Create a mock widget
+widget = Mock()
+widget.objectName.return_value = "myButton"
+widget.metaObject.return_value.className.return_value = "QPushButton"
+
+parser = QSSParser()
+qss = """
+@variables {
+    --base-color: #0000ff;
+    --primary-color: var(--base-color);
+    --font-size: 14px;
+}
+#myButton {
+    color: var(--primary-color);
+    font-size: var(--font-size);
+    background: white;
+}
+"""
+
+# Validate QSS format
+errors = parser.check_format(qss)
+if errors:
+    print("Invalid QSS format:")
+    for error in errors:
+        print(error)
+else:
+    # Parse and retrieve styles
+    parser.parse(qss)
+    styles = parser.get_styles_for(widget)
+    print("Styles for widget:")
+    print(styles)
+```
+
+**Output**:
+
+```
+Styles for widget:
+#myButton {
+    color: #0000ff;
+    font-size: 14px;
+    background: white;
+}
+```
+
 ### Integration with Qt Applications
 
 This example demonstrates how to use `qss-parser` in a real PyQt5 application to apply styles to a widget.
@@ -298,7 +352,7 @@ Please read our [Contributing Guidelines](CONTRIBUTING.md) for more details.
 
 ## Testing
 
-The library includes a comprehensive test suite located in the `tests/` directory. To run the tests:
+The library includes a comprehensive test suite located in the `tests/` directory, covering validation, parsing, style extraction, and variable resolution. To run the tests:
 
 ```bash
 python -m unittest discover tests

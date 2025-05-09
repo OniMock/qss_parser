@@ -447,6 +447,128 @@ class TestQSSParserParsing(unittest.TestCase):
         self.assertEqual(rule.properties[0].name, "color")
         self.assertEqual(rule.properties[0].value, "blue")
 
+    def test_parse_variables_block(self) -> None:
+        """
+        Test parsing a @variables block and resolving variables in properties.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --font-size: 14px;
+        }
+        QPushButton {
+            color: var(--primary-color);
+            font-size: var(--font-size);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.selector, "QPushButton")
+        self.assertEqual(len(rule.properties), 2)
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "#ffffff")
+        self.assertEqual(rule.properties[1].name, "font-size")
+        self.assertEqual(rule.properties[1].value, "14px")
+
+    def test_undefined_variable(self) -> None:
+        """
+        Test handling of undefined variables, ensuring an error is reported.
+        """
+        errors = []
+
+        def error_handler(error: str) -> None:
+            errors.append(error)
+
+        qss: str = """
+        QPushButton {
+            color: var(--undefined-color);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.on("error_found", error_handler)
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.properties[0].value, "var(--undefined-color)")
+        self.assertEqual(len(errors), 1)
+        self.assertTrue("Undefined variables: --undefined-color" in errors[0])
+
+    def test_malformed_variables_block(self) -> None:
+        """
+        Test parsing a malformed @variables block, ensuring errors are reported.
+        """
+        errors = []
+
+        def error_handler(error: str) -> None:
+            errors.append(error)
+
+        qss: str = """
+        @variables {
+            primary-color: #ffffff;
+            --font-size: 14px
+        }
+        QPushButton {
+            color: var(--primary-color);
+            background: #ffffff;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.on("error_found", error_handler)
+        parser.parse(qss)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue("Invalid variable name" in errors[0])
+        self.assertEqual(len(parser._state.rules), 1)
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.properties[0].value, "var(--primary-color)")
+        self.assertEqual(rule.properties[1].value, "#ffffff")
+
+    def test_variables_with_complex_values(self) -> None:
+        """
+        Test parsing variables with complex values, such as gradients or multi-part values.
+        """
+        qss: str = """
+        @variables {
+            --gradient: linear-gradient(to right, #ff0000, #00ff00);
+        }
+        QPushButton {
+            background: var(--gradient);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.selector, "QPushButton")
+        self.assertEqual(len(rule.properties), 1)
+        self.assertEqual(rule.properties[0].name, "background")
+        self.assertEqual(
+            rule.properties[0].value, "linear-gradient(to right, #ff0000, #00ff00)"
+        )
+
+    def test_nested_variables(self) -> None:
+        """
+        Test resolving variables that reference other variables.
+        """
+        qss: str = """
+        @variables {
+            --base-color: #0000ff;
+            --button-color: var(--base-color);
+        }
+        QPushButton {
+            color: var(--button-color);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.selector, "QPushButton")
+        self.assertEqual(len(rule.properties), 1)
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "#0000ff")
+
 
 class TestQSSParserStyleSelection(unittest.TestCase):
     def setUp(self) -> None:
@@ -937,6 +1059,93 @@ QFrame {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
+    def test_check_format_valid_variables_block(self) -> None:
+        """
+        Test validation of a valid @variables block in QSS text.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --font-size: 14px;
+        }
+        QPushButton {
+            color: var(--primary-color);
+            font-size: var(--font-size);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        errors = parser.check_format(qss)
+        self.assertEqual(
+            len(errors), 0, "Valid @variables block should not produce errors"
+        )
+
+    def test_check_format_malformed_variables_block(self) -> None:
+        """
+        Test validation of a malformed @variables block, ensuring errors are reported.
+        """
+        qss: str = """
+        @variables {
+            primary-color: #ffffff;
+            --font-size: 14px
+        }
+        QPushButton {
+            color: var(--primary-color);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        errors = parser.check_format(qss)
+        self.assertGreater(
+            len(errors), 0, "Malformed @variables block should produce errors"
+        )
+        self.assertTrue(
+            any("Property missing ';'" in error for error in errors),
+            "Should report missing semicolon error",
+        )
+
+    def test_check_format_nested_variables_block(self) -> None:
+        """
+        Test validation of a nested @variables block, which should be rejected.
+        """
+        qss: str = """
+        QPushButton {
+            @variables {
+                --primary-color: #ffffff;
+            }
+        }
+        """
+        parser: QSSParser = QSSParser()
+        errors = parser.check_format(qss)
+        self.assertGreater(
+            len(errors), 0, "Nested @variables block should produce errors"
+        )
+        self.assertTrue(
+            any("Nested @variables block" in error for error in errors),
+            "Should report nested @variables block error",
+        )
+
+    def test_check_format_variables_and_rules(self) -> None:
+        """
+        Test validation of QSS text with both @variables and regular rules.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+        }
+        QPushButton {
+            color: var(--primary-color);
+        }
+        QLabel {
+            background-color: var(--primary-color);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        errors = parser.check_format(qss)
+        self.assertEqual(
+            len(errors),
+            0,
+            "Valid QSS with @variables and rules should not produce errors",
+        )
+
     def test_get_styles_for_attribute_selector(self) -> None:
         """
         Test style retrieval for a selector with attribute and pseudo-state.
@@ -1109,6 +1318,159 @@ QPushButton:hover {
         stylesheet: str = parser.get_styles_for(widget)
         expected: str = """QWidget > QFrame QPushButton #myButton:hover {
     border: 2px solid red;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_variables_and_fixed_properties(self) -> None:
+        """
+        Test style retrieval with variables and fixed properties in the same rule.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        @variables {
+            --primary-color: #ff0000;
+            --font-size: 16px;
+        }
+        QPushButton {
+            color: var(--primary-color);
+            font-size: var(--font-size);
+            background: white;
+            border: 1px solid black;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton {
+    color: #ff0000;
+    font-size: 16px;
+    background: white;
+    border: 1px solid black;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_nested_variables_and_fixed_properties(self) -> None:
+        """
+        Test style retrieval with nested variables and fixed properties.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        @variables {
+            --base-color: #0000ff;
+            --primary-color: var(--base-color);
+        }
+        #myButton {
+            color: var(--primary-color);
+            background: white;
+            padding: 5px;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "myButton"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """#myButton {
+    color: #0000ff;
+    background: white;
+    padding: 5px;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_undefined_variable_and_fixed_properties(self) -> None:
+        """
+        Test style retrieval with an undefined variable and fixed properties.
+        """
+        parser: QSSParser = QSSParser()
+        errors = []
+
+        def error_handler(error: str) -> None:
+            errors.append(error)
+
+        parser.on("error_found", error_handler)
+        qss: str = """
+        QPushButton {
+            color: var(--undefined-color);
+            font-size: 14px;
+            border: none;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton {
+    color: var(--undefined-color);
+    font-size: 14px;
+    border: none;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(len(errors), 1)
+        self.assertTrue("Undefined variables: --undefined-color" in errors[0])
+
+    def test_get_styles_with_variables_and_attribute_selector(self) -> None:
+        """
+        Test style retrieval with variables in a rule with an attribute selector.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        @variables {
+            --hover-color: #00ff00;
+        }
+        QPushButton[selected="true"]:hover {
+            color: var(--hover-color);
+            background: transparent;
+            border-radius: 5px;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton[selected="true"]:hover {
+    color: #00ff00;
+    background: transparent;
+    border-radius: 5px;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_multiple_rules_and_variables(self) -> None:
+        """
+        Test style retrieval with multiple rules, some using variables and others not.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --border-width: 2px;
+        }
+        #myButton {
+            color: var(--primary-color);
+            border: var(--border-width) solid black;
+        }
+        QPushButton {
+            background: blue;
+            font-size: 12px;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "myButton"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(
+            widget, include_class_if_object_name=True
+        )
+        expected: str = """#myButton {
+    color: #ffffff;
+    border: 2px solid black;
+}
+QPushButton {
+    background: blue;
+    font-size: 12px;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 

@@ -87,6 +87,90 @@ class QSSProperty:
         return {"name": self.name, "value": self.value}
 
 
+class VariableManager:
+    """
+    Manages QSS variables defined in @variables blocks and resolves var() references.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initializes the variable manager.
+        """
+        self._variables: Dict[str, str] = {}
+        self._logger: logging.Logger = logging.getLogger(__name__)
+
+    def parse_variables(self, block: str) -> List[str]:
+        """
+        Parses a @variables block and stores the variables.
+
+        Args:
+            block (str): The content of the @variables block (e.g., '--primary-color: #ffffff;').
+
+        Returns:
+            List[str]: List of error messages for invalid variable declarations.
+        """
+        errors: List[str] = []
+        lines = block.split(";")
+        for i, line in enumerate(lines, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            if not line.startswith("--"):
+                errors.append(
+                    f"Invalid variable name on line {i}: Must start with '--': {line}"
+                )
+                continue
+            parts = line.split(":", 1)
+            if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                errors.append(f"Malformed variable declaration on line {i}: {line}")
+                continue
+            name, value = parts
+            self._variables[name.strip()] = value.strip()
+        return errors
+
+    def resolve_variable(self, value: str) -> Tuple[str, Optional[str]]:
+        """
+        Resolves var(--name) references in a property value recursively.
+
+        Args:
+            value (str): The property value containing var(--name) references.
+
+        Returns:
+            Tuple[str, Optional[str]]: The resolved value and an error message if a variable is undefined or a loop is detected.
+        """
+        visited: Set[str] = set()
+        pattern = r"var\((--[\w-]+)\)"
+
+        def replace_var(match: re.Match[str]) -> str:
+            var_name = match.group(1)
+            if var_name in visited:
+                self._logger.warning(
+                    f"Circular variable reference detected: {var_name}"
+                )
+                return match.group(0)  # Return original to avoid infinite loop
+            if var_name not in self._variables:
+                return match.group(0)  # Keep original if undefined
+            visited.add(var_name)
+            resolved_value = self._variables[var_name]
+            # Recursively resolve nested var() references
+            nested_value = re.sub(pattern, replace_var, resolved_value)
+            visited.remove(var_name)
+            return nested_value
+
+        resolved_value = re.sub(pattern, replace_var, value)
+        undefined_vars = [
+            match.group(1)
+            for match in re.finditer(pattern, value)
+            if match.group(1) not in self._variables and match.group(1) not in visited
+        ]
+        error = (
+            f"Undefined variables: {', '.join(undefined_vars)}"
+            if undefined_vars
+            else None
+        )
+        return resolved_value, error
+
+
 class SelectorUtils:
     """
     Utility class for parsing and normalizing QSS selectors.
@@ -118,29 +202,20 @@ class SelectorUtils:
 
         Returns:
             str: The normalized selector.
-
-        Example:
-            >>> SelectorUtils.normalize_selector("QWidget   >   QPushButton")
-            'QWidget > QPushButton'
-            >>> SelectorUtils.normalize_selector("QPushButton [data-value=\\"complex string\\"]")
-            'QPushButton [data-value="complex string"]'
         """
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         normalized_selectors = []
         for sel in selectors:
-            # Protect attribute selectors
             attributes = SelectorUtils.extract_attributes(sel)
             temp_placeholders = [f"__ATTR_{i}__" for i in range(len(attributes))]
             temp_sel = sel
             for placeholder, attr in zip(temp_placeholders, attributes):
                 temp_sel = temp_sel.replace(attr, placeholder)
 
-            # Normalize spaces
             temp_sel = re.sub(r"\s*>\s*", " > ", temp_sel)
             temp_sel = re.sub(r"\s+", " ", temp_sel)
             temp_sel = temp_sel.strip()
 
-            # Restore attributes
             for placeholder, attr in zip(temp_placeholders, attributes):
                 temp_sel = temp_sel.replace(placeholder, attr)
 
@@ -169,14 +244,12 @@ class SelectorUtils:
         attributes = SelectorUtils.extract_attributes(selector)
         pseudo_states: List[str] = []
 
-        # Remove attributes and pseudo-elements
         selector_clean = re.sub(SelectorUtils._ATTRIBUTE_PATTERN, "", selector)
         selector_clean = re.sub(r"::\w+", "", selector_clean)
         parts = selector_clean.split(":")
         main_selector = parts[0].strip()
         pseudo_states = [p.strip() for p in parts[1:] if p.strip()]
 
-        # Handle composite selectors
         selector_parts = [
             part.strip() for part in re.split(r"\s+", main_selector) if part.strip()
         ]
@@ -312,9 +385,11 @@ class ParserState:
         self.buffer: str = ""
         self.in_comment: bool = False
         self.in_rule: bool = False
+        self.in_variables: bool = False
         self.current_selectors: List[str] = []
         self.original_selector: Optional[str] = None
         self.current_rules: List[QSSRule] = []
+        self.variable_buffer: str = ""
 
     def reset(self) -> None:
         """
@@ -324,14 +399,16 @@ class ParserState:
         self.buffer = ""
         self.in_comment = False
         self.in_rule = False
+        self.in_variables = False
         self.current_selectors = []
         self.original_selector = None
         self.current_rules = []
+        self.variable_buffer = ""
 
 
 class QSSValidator:
     """
-    Validates QSS text for syntactic correctness.
+    Validates QSS text for syntactic correctness, including variables.
     """
 
     def __init__(self) -> None:
@@ -343,7 +420,7 @@ class QSSValidator:
     def check_format(self, qss_text: str) -> List[str]:
         """
         Validates the format of QSS text, checking for unclosed braces, properties without semicolons,
-        extra closing braces, and malformed rules.
+        extra closing braces, malformed rules, and variable declarations.
 
         Args:
             qss_text (str): The QSS text to validate.
@@ -356,6 +433,7 @@ class QSSValidator:
         lines = qss_text.splitlines()
         in_comment: bool = False
         in_rule: bool = False
+        in_variables: bool = False
         open_braces: int = 0
         current_selector: str = ""
         last_line_num: int = 0
@@ -378,6 +456,14 @@ class QSSValidator:
                 errors.extend(self._validate_complete_rule(line, line_num))
                 continue
 
+            if in_variables:
+                if line == "}":
+                    open_braces -= 1
+                    in_variables = open_braces > 0
+                    continue
+                property_buffer = (property_buffer + " " + line).strip()
+                continue
+
             if in_rule:
                 if line == "}":
                     if open_braces == 0:
@@ -398,6 +484,11 @@ class QSSValidator:
                     continue
 
                 if line.endswith("{"):
+                    if line.startswith("@variables"):
+                        errors.append(
+                            f"Error on line {line_num}: Nested @variables block: {line}"
+                        )
+                        continue
                     errors.extend(
                         self._validate_pending_properties(property_buffer, line_num - 1)
                     )
@@ -410,12 +501,27 @@ class QSSValidator:
                     last_line_num = line_num
                     continue
 
+                if line.startswith("@variables"):
+                    errors.append(
+                        f"Error on line {line_num}: Nested @variables block: {line}"
+                    )
+                    continue
+
                 property_buffer, new_errors = self._process_property_line(
                     line, property_buffer, line_num
                 )
                 errors.extend(new_errors)
                 last_line_num = line_num
             else:
+                if line == "@variables {":
+                    if open_braces > 0:
+                        errors.append(
+                            f"Error on line {line_num}: Nested @variables block: {line}"
+                        )
+                    open_braces += 1
+                    in_variables = True
+                    last_line_num = line_num
+                    continue
                 if line.endswith("{"):
                     new_errors, selector = self._validate_selector(line, line_num)
                     errors.extend(new_errors)
@@ -516,6 +622,7 @@ class QSSValidator:
             not self._is_complete_rule(line)
             and not self._is_property_line(line)
             and not line.startswith("/*")
+            and not line.startswith("@variables")
             and "*/" not in line
             and not line == "}"
             and bool(re.match(r"^\s*[^/][^{};]*\s*$", line))
@@ -563,7 +670,7 @@ class QSSValidator:
         Returns:
             bool: True if the line is a valid property line, False otherwise.
         """
-        return ":" in line and ";" in line
+        return ":" in line and ";" in line and not line.startswith("@variables")
 
     def _process_property_line(
         self, line: str, buffer: str, line_num: int
@@ -591,7 +698,8 @@ class QSSValidator:
             full_line = (buffer + " " + line).strip() if buffer else line
             parts = full_line.split(";")
             for part in parts[:-1]:
-                if part.strip():
+                part = part.strip()
+                if part:
                     if ":" not in part or part.strip().endswith(":"):
                         errors.append(
                             f"Error on line {line_num}: Malformed property: {part.strip()}"
@@ -789,13 +897,16 @@ class QSSParserPlugin(ABC):
     """
 
     @abstractmethod
-    def process_line(self, line: str, state: ParserState) -> bool:
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
         """
         Processes a line of QSS text.
 
         Args:
             line (str): The line to process.
             state (ParserState): The current parser state.
+            variable_manager (VariableManager): Manager for resolving variables.
 
         Returns:
             bool: True if the line was handled, False otherwise.
@@ -805,7 +916,7 @@ class QSSParserPlugin(ABC):
 
 class DefaultQSSParserPlugin(QSSParserPlugin):
     """
-    Default plugin for parsing QSS text, handling selectors and properties.
+    Default plugin for parsing QSS text, handling selectors, properties, and variables.
     """
 
     def __init__(self, parser: "QSSParser") -> None:
@@ -818,13 +929,16 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         self._parser: "QSSParser" = parser
         self._logger: logging.Logger = logging.getLogger(__name__)
 
-    def process_line(self, line: str, state: ParserState) -> bool:
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
         """
         Processes a line of QSS text using the default parsing logic.
 
         Args:
             line (str): The line to process.
             state (ParserState): The current parser state.
+            variable_manager (VariableManager): Manager for resolving variables.
 
         Returns:
             bool: True if the line was handled, False otherwise.
@@ -838,7 +952,22 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
             state.in_comment = True
             return True
         if self._is_complete_rule(line):
-            self._process_complete_rule(line, state)
+            self._process_complete_rule(line, state, variable_manager)
+            return True
+        if line == "@variables {" and not state.in_rule:
+            state.in_variables = True
+            state.variable_buffer = ""
+            return True
+        if state.in_variables:
+            if line == "}":
+                errors = variable_manager.parse_variables(state.variable_buffer)
+                for error in errors:
+                    for handler in self._parser._event_handlers["error_found"]:
+                        handler(error)
+                state.in_variables = False
+                state.variable_buffer = ""
+                return True
+            state.variable_buffer = (state.variable_buffer + " " + line).strip()
             return True
         if line.endswith("{") and not state.in_rule:
             selector_part = line[:-1].strip()
@@ -871,7 +1000,9 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
                 parts = full_line.split(";")
                 for part in parts[:-1]:
                     if part.strip():
-                        self._process_property(part.strip() + ";", state)
+                        self._process_property(
+                            part.strip() + ";", state, variable_manager
+                        )
                 if parts[-1].strip():
                     state.buffer = parts[-1].strip()
             else:
@@ -891,13 +1022,16 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         """
         return bool(re.match(r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$", line))
 
-    def _process_complete_rule(self, line: str, state: ParserState) -> None:
+    def _process_complete_rule(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> None:
         """
         Processes a complete QSS rule in a single line.
 
         Args:
             line (str): The line containing the complete rule.
             state (ParserState): The current parser state.
+            variable_manager (VariableManager): Manager for resolving variables.
         """
         match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
         if not match:
@@ -917,7 +1051,7 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
             for part in prop_parts:
                 part = part.strip()
                 if part:
-                    self._process_property(part + ";", state)
+                    self._process_property(part + ";", state, variable_manager)
         for rule in state.current_rules:
             rule.original += "}\n"
             self._add_rule(rule, state)
@@ -925,13 +1059,16 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         state.current_selectors = []
         state.original_selector = None
 
-    def _process_property(self, line: str, state: ParserState) -> None:
+    def _process_property(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> None:
         """
-        Processes a property line and adds it to the current rules.
+        Processes a property line and adds it to the current rules, resolving variables.
 
         Args:
             line (str): The property line to process.
             state (ParserState): The current parser state.
+            variable_manager (VariableManager): Manager for resolving variables.
         """
         line = line.rstrip(";")
         if not state.current_rules:
@@ -940,10 +1077,14 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
         if len(parts) == 2:
             name, value = parts
             if name.strip() and value.strip():
-                normalized_line = f"{name.strip()}: {value.strip()};"
+                resolved_value, error = variable_manager.resolve_variable(value.strip())
+                if error:
+                    for handler in self._parser._event_handlers["error_found"]:
+                        handler(error)
+                normalized_line = f"{name.strip()}: {resolved_value};"
                 for rule in state.current_rules:
                     rule.original += f"    {normalized_line}\n"
-                    rule.add_property(name.strip(), value.strip())
+                    rule.add_property(name.strip(), resolved_value)
 
     def _add_rule(self, rule: QSSRule, state: ParserState) -> None:
         """
@@ -986,7 +1127,7 @@ class DefaultQSSParserPlugin(QSSParserPlugin):
 
 class QSSParser:
     """
-    Parses QSS text and applies styles to widgets.
+    Parses QSS text, including variables, and applies styles to widgets.
     """
 
     def __init__(self, plugins: Optional[List[QSSParserPlugin]] = None) -> None:
@@ -1000,6 +1141,7 @@ class QSSParser:
         self._state: ParserState = ParserState()
         self._validator: QSSValidator = QSSValidator()
         self._style_selector: QSSStyleSelector = QSSStyleSelector()
+        self._variable_manager: VariableManager = VariableManager()
         self._event_handlers: Dict[str, List[Callable[[Any], None]]] = {
             "rule_added": [],
             "error_found": [],
@@ -1021,11 +1163,10 @@ class QSSParser:
 
     def parse(self, qss_text: str) -> None:
         """
-        Parses QSS text into a list of QSSRule objects.
+        Parses QSS text into a list of QSSRule objects, resolving variables.
 
         Args:
-            qss_text (str): The QSS text to parse. Expected to be valid QSS syntax,
-                           with selectors and properties separated by braces and semicolons.
+            qss_text (str): The QSS text to parse, including @variables blocks.
         """
         self._reset()
         lines = qss_text.splitlines()
@@ -1033,12 +1174,18 @@ class QSSParser:
             self._process_line(line)
         if self._state.buffer.strip():
             self._process_property(self._state.buffer)
+        if self._state.variable_buffer.strip():
+            errors = self._variable_manager.parse_variables(self._state.variable_buffer)
+            for error in errors:
+                for handler in self._event_handlers["error_found"]:
+                    handler(error)
 
     def _reset(self) -> None:
         """
         Resets the parser's internal state.
         """
         self._state.reset()
+        self._variable_manager = VariableManager()
         self._logger.debug("Parser state reset")
 
     def _process_line(self, line: str) -> None:
@@ -1049,25 +1196,24 @@ class QSSParser:
             line (str): The line to process.
         """
         for plugin in self._plugins:
-            if plugin.process_line(line, self._state):
+            if plugin.process_line(line, self._state, self._variable_manager):
                 break
 
     def _process_property(self, line: str) -> None:
         """
-        Processes a property line and adds it to the current rules.
+        Processes a property line and adds it to the current rules, resolving variables.
 
         Args:
             line (str): The property line to process.
         """
         for plugin in self._plugins:
             if isinstance(plugin, DefaultQSSParserPlugin):
-                plugin._process_property(line, self._state)
+                plugin._process_property(line, self._state, self._variable_manager)
                 break
 
     def check_format(self, qss_text: str) -> List[str]:
         """
-        Validates the format of QSS text, checking for unclosed braces, properties without semicolons,
-        extra closing braces, and malformed rules.
+        Validates the format of QSS text, including variables.
 
         Args:
             qss_text (str): The QSS text to validate.
