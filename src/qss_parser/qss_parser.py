@@ -1,7 +1,18 @@
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Protocol, Set, Tuple, TypedDict
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+    TypedDict,
+    Match,
+)
 
 
 class MetaObjectProtocol(Protocol):
@@ -141,7 +152,7 @@ class VariableManager:
         visited: Set[str] = set()
         pattern = r"var\((--[\w-]+)\)"
 
-        def replace_var(match: re.Match[str]) -> str:
+        def replace_var(match: Match[str]) -> str:
             var_name = match.group(1)
             if var_name in visited:
                 self._logger.warning(

@@ -22,7 +22,7 @@ dependencies = []
 
 [tool.black]
 line-length = 88
-target-version = ["py36"]
+target-version = ["py38"]
 
 [tool.mypy]
 python_version = "3.8"
@@ -30,12 +30,20 @@ files = ["src/qss_parser/qss_parser.py", "tests/test_qss_parser.py"]
 strict = true
 show_error_codes = true
 disallow_any_unimported = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+no_implicit_optional = true
 
 [[tool.mypy.overrides]]
 module = ["unittest.mock", "logging"]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report=xml"
+testpaths = ["tests"]
 
 [tool.flake8]
 max-line-length = 88
