@@ -1,3 +1,23 @@
+## [0.1.3] - 2025-05-09
+
+qss-parser v0.1.3
+
+### Overview
+Version 0.1.3 of qss-parser.
+
+## Changes
+- Fix: sort imports ([0507feb](https://github.com/OniMock/qss_parser/commit/0507feb282f354d6052fa99d229a18eb16abb295))
+- Fix: Match typing ([43d7b57](https://github.com/OniMock/qss_parser/commit/43d7b5761681b9a3a84791ff1a0721f3a607e9e2))
+- Update: to include variable support ([35a3951](https://github.com/OniMock/qss_parser/commit/35a395119c8eeabd73fa62a26d2fd0d9b62232b4))
+- Refactor: all code ([7c6aee8](https://github.com/OniMock/qss_parser/commit/7c6aee8464c70be68c7a6a081329a75150cbe05d))
+- Fix: full example on readme ([37c6967](https://github.com/OniMock/qss_parser/commit/37c6967d5b515071ed90f649dc98e5498c8294d3))
+## Installation
+```bash
+pip install qss-parser==0.1.3
+```
+
+See the [README.md](README.md) for more details.
+
 ## [0.1.2] - 2025-05-08
 
 qss-parser v0.1.2
