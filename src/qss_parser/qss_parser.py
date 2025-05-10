@@ -352,6 +352,15 @@ class SelectorUtils:
         selector = selector.strip()
 
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
+        if len(selectors) > 1:
+            for sel in selectors:
+                if ":" in sel and not sel.endswith(":"):
+                    errors.append(
+                        f"Error: Pseudo-states in comma-separated selectors are not supported. "
+                        f"Split into separate rules for {selector}"
+                    )
+                    return errors
+
         for sel in selectors:
             pseudo_pattern = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*(\w+)"
             matches = re.finditer(pseudo_pattern, sel)
@@ -373,6 +382,7 @@ class SelectorUtils:
                         f"Error on line {line_num}: Invalid selector: '{sel}'. "
                         f"Space required between class and ID in '{part}'"
                     )
+
             combinator_pattern = (
                 r"(\w+|#[-\w]+|\[.*?\])([> ]{1,2})(\w+|#[-\w]+|\[.*?\])"
             )
@@ -443,6 +453,7 @@ class QSSSyntaxChecker:
     def __init__(self) -> None:
         """Initialize the QSS syntax checker."""
         self._logger: logging.Logger = logging.getLogger(__name__)
+        self._selector_buffer: List[str] = []
 
     def check_format(self, qss_text: str) -> List[str]:
         """
@@ -479,6 +490,7 @@ class QSSSyntaxChecker:
 
             if SelectorUtils.is_complete_rule(line):
                 errors.extend(self._validate_complete_rule(line, line_num))
+                self._selector_buffer = []
                 continue
 
             if in_variables:
@@ -549,10 +561,21 @@ class QSSSyntaxChecker:
                     continue
                 if line.endswith("{"):
                     new_errors, selector = self._validate_selector(line, line_num)
+                    if self._selector_buffer:
+                        selector = ", ".join(self._selector_buffer + [selector])
+                        new_errors.extend(
+                            SelectorUtils.validate_selector_syntax(selector, line_num)
+                        )
                     errors.extend(new_errors)
                     current_selector = selector
                     open_braces += 1
                     in_rule = True
+                    last_line_num = line_num
+                    self._selector_buffer = []
+                elif line.endswith(","):
+                    selector = line[:-1].strip()
+                    if selector:
+                        self._selector_buffer.append(selector)
                     last_line_num = line_num
                 elif self._is_property_line(line):
                     errors.append(
@@ -563,7 +586,7 @@ class QSSSyntaxChecker:
                         f"Error on line {line_num}: Closing brace '}}' without matching '{{': {line}"
                     )
                 else:
-                    if self._is_potential_selector(line):
+                    if self._is_potential_selector(line) and not self._selector_buffer:
                         errors.append(
                             f"Error on line {line_num}: Selector without opening brace '{{': {line}"
                         )
@@ -636,6 +659,7 @@ class QSSSyntaxChecker:
             and not line.startswith("@variables")
             and "*/" not in line
             and not line == "}"
+            and not line.endswith(",")
             and bool(re.match(r"^\s*[^/][^{};]*\s*$", line))
         )
 
@@ -983,18 +1007,32 @@ class SelectorPlugin(QSSParserPlugin):
             self._process_complete_rule(line, state, variable_manager)
             return True
 
+        if line.endswith(","):
+            selector_part = line[:-1].strip()
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            return True
+
         if line.endswith("{") and not state.in_rule:
             selector_part = line[:-1].strip()
-            normalized_selector = SelectorUtils.normalize_selector(selector_part)
-            selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
-            if not selectors:
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            if not state.current_selectors:
                 return True
-            state.current_selectors = selectors
-            state.original_selector = normalized_selector
+            state.original_selector = ", ".join(state.current_selectors)
             state.current_rules = [
-                QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
+                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
             ]
             state.in_rule = True
+            state.current_selectors = []
             return True
 
         if line == "}" and state.in_rule:
@@ -1085,10 +1123,9 @@ class SelectorPlugin(QSSParserPlugin):
         self._logger.debug(f"Merging/appending rule: {rule.selector}")
         for existing_rule in state.rules:
             if existing_rule.selector == rule.selector:
-                # Merge properties, keeping the last value for duplicates (CSS standard)
                 prop_map = {p.name: p for p in existing_rule.properties}
                 for prop in rule.properties:
-                    prop_map[prop.name] = prop  # Overwrite with the latest value
+                    prop_map[prop.name] = prop
                 existing_rule.properties = list(prop_map.values())
                 existing_rule.original = QSSFormatter.format_rule(
                     existing_rule.selector, existing_rule.properties
@@ -1105,12 +1142,11 @@ class SelectorPlugin(QSSParserPlugin):
             and "," not in rule.selector
         ):
             base_rule = rule.clone_without_pseudo_elements()
-            # Check if base rule already exists to avoid duplicates
             for existing_rule in state.rules:
                 if existing_rule.selector == base_rule.selector:
                     prop_map = {p.name: p for p in existing_rule.properties}
                     for prop in base_rule.properties:
-                        prop_map[prop.name] = prop  # Overwrite with the latest value
+                        prop_map[prop.name] = prop
                     existing_rule.properties = list(prop_map.values())
                     existing_rule.original = QSSFormatter.format_rule(
                         existing_rule.selector, existing_rule.properties
