@@ -2267,7 +2267,6 @@ class TestQSSParserToString(unittest.TestCase):
             outline: none;
         }"""
         self.parser.parse(qss)
-        print(self.parser.to_string())
         expected = """QComboBox QAbstractItemView {
     background-color: purple;
     border: 1px solid rgb(98, 114, 164);
@@ -2340,7 +2339,6 @@ QComboBox {
 
         }"""
         self.parser.parse(qss)
-        print(self.parser.to_string())
         expected = """#btn_home {
     background-color: green;
     border: none;
@@ -2387,7 +2385,7 @@ QPushButton {
             --font-family: "Segoe UI";
             --font-size: 10pt;
         }
-        #topMenu .QPushButton {    
+        #topMenu .QPushButton {
             background-position: left center;
             background-repeat: no-repeat;
             border: none;
@@ -2399,12 +2397,11 @@ QPushButton {
         #topMenu .QPushButton:hover {
             font-size: var(--font-size);
         }
-        #topMenu .QPushButton:pressed {    
+        #topMenu .QPushButton:pressed {
             background-color: red;
             color: var(--primary-color);
         }"""
         self.parser.parse(qss)
-        print(self.parser.to_string())
         expected = """#topMenu .QPushButton {
     background-position: left center;
     background-repeat: no-repeat;
