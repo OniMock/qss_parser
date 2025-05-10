@@ -336,6 +336,56 @@ class SelectorUtils:
 
         return object_name, class_name, attributes, pseudo_states
 
+    @staticmethod
+    def validate_selector_syntax(selector: str, line_num: int) -> List[str]:
+        """
+        Validate the syntax of a QSS selector, checking for spacing issues.
+
+        Args:
+            selector: The selector to validate.
+            line_num: The line number for error reporting.
+
+        Returns:
+            List of error messages for invalid selector syntax.
+        """
+        errors: List[str] = []
+        selector = selector.strip()
+
+        selectors = [s.strip() for s in selector.split(",") if s.strip()]
+        for sel in selectors:
+            pseudo_pattern = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*(\w+)"
+            matches = re.finditer(pseudo_pattern, sel)
+            for match in matches:
+                prefix, colon, pseudo = match.groups()
+                full_match = match.group(0)
+                if re.search(r"\s+:{1,2}\s*", full_match):
+                    pseudo_type = "pseudo-element" if colon == "::" else "pseudo-state"
+                    errors.append(
+                        f"Error on line {line_num}: Invalid spacing in selector: '{sel}'. "
+                        f"No space allowed between '{prefix}' and '{colon}{pseudo}' ({pseudo_type})"
+                    )
+
+            class_id_pattern = r"(\w+)(#[-\w]+)"
+            parts = re.split(r"\s+", sel)
+            for part in parts:
+                if re.match(class_id_pattern, part):
+                    errors.append(
+                        f"Error on line {line_num}: Invalid selector: '{sel}'. "
+                        f"Space required between class and ID in '{part}'"
+                    )
+            combinator_pattern = (
+                r"(\w+|#[-\w]+|\[.*?\])([> ]{1,2})(\w+|#[-\w]+|\[.*?\])"
+            )
+            for match in re.finditer(combinator_pattern, sel):
+                left, combinator, right = match.groups()
+                if combinator not in [" ", ">"]:
+                    errors.append(
+                        f"Error on line {line_num}: Invalid combinator in selector: '{sel}'. "
+                        f"Invalid combinator '{combinator}' between '{left}' and '{right}'"
+                    )
+
+        return errors
+
 
 class QSSFormatter:
     """Utility class for formatting QSS rules and properties."""
@@ -545,6 +595,8 @@ class QSSSyntaxChecker:
         selector = selector.strip()
         if not selector:
             errors.append(f"Error on line {line_num}: Empty selector in rule: {line}")
+        else:
+            errors.extend(SelectorUtils.validate_selector_syntax(selector, line_num))
 
         if properties.strip():
             prop_parts = properties.split(";")
@@ -617,6 +669,8 @@ class QSSSyntaxChecker:
             errors.append(
                 f"Error on line {line_num}: Empty selector before '{{': {line}"
             )
+        else:
+            errors.extend(SelectorUtils.validate_selector_syntax(selector, line_num))
         return errors, selector
 
     def _is_property_line(self, line: str) -> bool:
