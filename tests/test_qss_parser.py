@@ -1901,6 +1901,62 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
+    def test_get_styles_with_variable_and_non_variable_rules(self) -> None:
+        """
+        Test style retrieval when the QSS contains both variable-based and direct rules.
+        Ensures correct resolution and merging of styles for widgets with object names and additional selectors.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --border-width: 2px;
+        }
+        #myButton,
+        QPushButton {
+            color: var(--primary-color);
+            border: var(--border-width) solid black;
+        }
+        QPushButton {
+            color: green;
+            background: blue;
+            font-size: 12px;
+        }
+        QFrame {
+            color: blue;
+            background: red;
+            font-size: 12px;
+        }
+        #myButton QFrame {
+            color: yellow;
+            background: orange;
+            font-size: 12px;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "myButton"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(
+            widget, include_class_if_object_name=True, additional_selectors=["QFrame"]
+        )
+        expected: str = """#myButton {
+    color: #ffffff;
+    border: 2px solid black;
+}
+QFrame {
+    color: blue;
+    background: red;
+    font-size: 12px;
+}
+QPushButton {
+    color: green;
+    border: 2px solid black;
+    background: blue;
+    font-size: 12px;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
 
 class TestQSSParserEvents(unittest.TestCase):
     def setUp(self) -> None:
@@ -2035,6 +2091,384 @@ class TestQSSParserEvents(unittest.TestCase):
         selectors: Set[str] = {rule.selector for rule in rules_added}
         self.assertEqual(
             selectors, {"QPushButton", "QFrame"}, "Should capture all selectors"
+        )
+
+
+class TestQSSParserToString(unittest.TestCase):
+    """Test cases for the to_string() method of QSSParser."""
+
+    def setUp(self) -> None:
+        """Set up a new QSSParser instance for each test."""
+        self.parser = QSSParser()
+        self.validator = QSSValidator()
+
+    def test_to_string_simple_rule(self) -> None:
+        """Test to_string() with a simple QSS rule."""
+        qss = """
+        QPushButton {
+            color: blue;
+            background: white;
+        }
+        """
+        self.parser.parse(qss)
+        expected = "QPushButton {\n    color: blue;\n    background: white;\n}\n"
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should format a simple rule with semicolons",
+        )
+
+    def test_to_string_multiple_selectors(self) -> None:
+        """Test to_string() with multiple comma-separated selectors."""
+        qss = """
+        #myButton, QFrame, .customClass {
+            font-size: 12px;
+            border: 1px solid black;
+        }
+        """
+        self.parser.parse(qss)
+        expected = (
+            "#myButton {\n    font-size: 12px;\n    border: 1px solid black;\n}\n\n"
+            "QFrame {\n    font-size: 12px;\n    border: 1px solid black;\n}\n\n"
+            ".customClass {\n    font-size: 12px;\n    border: 1px solid black;\n}\n"
+        )
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle multiple selectors correctly",
+        )
+
+    def test_to_string_with_variables(self) -> None:
+        """Test to_string() with a QSS rule using variables."""
+        qss = """
+        @variables {
+            --primary-color: #ff0000;
+            --font-size: 14px;
+        }
+        QPushButton {
+            color: var(--primary-color);
+            font-size: var(--font-size);
+        }
+        """
+        self.parser.parse(qss)
+        expected = "QPushButton {\n    color: #ff0000;\n    font-size: 14px;\n}\n"
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should resolve variables and format with semicolons",
+        )
+
+    def test_to_string_with_pseudo_state(self) -> None:
+        """Test to_string() with a rule containing a pseudo-state."""
+        qss = """
+        QPushButton:hover {
+            background: yellow;
+            border: none;
+        }
+        """
+        self.parser.parse(qss)
+        expected = (
+            "QPushButton:hover {\n    background: yellow;\n    border: none;\n}\n"
+        )
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle pseudo-states correctly",
+        )
+
+    def test_to_string_with_attribute_selector(self) -> None:
+        """Test to_string() with a rule using an attribute selector."""
+        qss = """
+        QPushButton[data-value="special"] {
+            color: green;
+            padding: 5px;
+        }
+        """
+        self.parser.parse(qss)
+        expected = 'QPushButton[data-value="special"] {\n    color: green;\n    padding: 5px;\n}\n'
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle attribute selectors correctly",
+        )
+
+    def test_to_string_multiple_rules(self) -> None:
+        """Test to_string() with multiple distinct rules."""
+        qss = """
+        #myButton {
+            color: red;
+        }
+        QFrame {
+            border: 2px solid blue;
+        }
+        .customClass {
+            font-weight: bold;
+        }
+        """
+        self.parser.parse(qss)
+        expected = (
+            "#myButton {\n    color: red;\n}\n\n"
+            "QFrame {\n    border: 2px solid blue;\n}\n\n"
+            ".customClass {\n    font-weight: bold;\n}\n"
+        )
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle multiple distinct rules",
+        )
+
+    def test_to_string_outputs_multiple_independent_rules_correctly(self) -> None:
+        """
+        Tests whether the to_string() method correctly returns multiple distinct QSS rules,
+        each with its own selector and without any combination between them.
+        Checks that the expected order and formatting are preserved.
+        """
+        self.maxDiff = None
+        qss = """
+        QComboBox QAbstractItemView {
+            background-color: purple;
+            border: 1px solid rgb(98, 114, 164);
+            color: yellow;
+            font-size: 12pt;
+            font-family: Segoe UI;
+            padding: 10px;
+            selection-background-color: rgb(39, 44, 54);
+            show-decoration-selected: 0;
+            outline: none;
+        }
+        QComboBox QScrollBar {
+            background-color: red;
+            border: 1px solid rgb(98, 114, 164);
+            color: purple;
+            font-size: 12pt;
+            font-family: Arial;
+            padding: 10px;
+            selection-background-color: rgb(39, 44, 54);
+            show-decoration-selected: 0;
+            outline: none;
+        }
+        QComboBox {
+            background-color: green;
+            border: 1px solid rgb(98, 114, 164);
+            color: red;
+            font-size: 12pt;
+            font-family: Times New Roman;
+            padding: 10px;
+        }
+        QComboBox {
+            background-color: blue;
+            border: 1px solid rgb(98, 114, 164);
+            color: green;
+            font-size: 12pt;
+            font-family: Comic Sans MS;
+            padding: 10px;
+            selection-background-color: rgb(39, 44, 54);
+            show-decoration-selected: 0;
+            outline: none;
+        }"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        expected = """QComboBox QAbstractItemView {
+    background-color: purple;
+    border: 1px solid rgb(98, 114, 164);
+    color: yellow;
+    font-size: 12pt;
+    font-family: Segoe UI;
+    padding: 10px;
+    selection-background-color: rgb(39, 44, 54);
+    show-decoration-selected: 0;
+    outline: none;
+}
+
+QComboBox QScrollBar {
+    background-color: red;
+    border: 1px solid rgb(98, 114, 164);
+    color: purple;
+    font-size: 12pt;
+    font-family: Arial;
+    padding: 10px;
+    selection-background-color: rgb(39, 44, 54);
+    show-decoration-selected: 0;
+    outline: none;
+}
+
+QComboBox {
+    background-color: blue;
+    border: 1px solid rgb(98, 114, 164);
+    color: green;
+    font-size: 12pt;
+    font-family: Comic Sans MS;
+    padding: 10px;
+    selection-background-color: rgb(39, 44, 54);
+    show-decoration-selected: 0;
+    outline: none;
+}
+"""
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle multiple distinct rules",
+        )
+
+    def test_to_string_merges_and_splits_multiple_overlapping_selectors_correctly(
+        self,
+    ) -> None:
+        """
+        Tests whether to_string() correctly merges properties from multiple rules
+        and splits comma-separated selectors into distinct blocks with the appropriate
+        combined declarations.
+        Ensures that overlapping selectors are handled correctly and order is preserved.
+        """
+        self.maxDiff = None
+        qss = """
+        #btn_home, QPushButton, #btn_save {
+            background-color: red;
+            border: 2px;
+            padding: 10px;
+            color: red;
+            text-align: left;
+        }
+        #btn_home,
+        QPushButton {
+            background-color: green;
+            border: none;
+
+        }
+        #btn_save {
+            background-color: purple;
+            text-align: right;
+
+        }"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        expected = """#btn_home {
+    background-color: green;
+    border: none;
+    padding: 10px;
+    color: red;
+    text-align: left;
+}
+
+QPushButton {
+    background-color: green;
+    border: none;
+    padding: 10px;
+    color: red;
+    text-align: left;
+}
+
+#btn_save {
+    background-color: purple;
+    border: 2px;
+    padding: 10px;
+    color: red;
+    text-align: right;
+}
+"""
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle multiple distinct rules",
+        )
+
+    def test_to_string_resolves_variables_and_expands_composite_selectors_correctly(
+        self,
+    ) -> None:
+        """
+        Tests whether to_string() correctly resolves variables defined in @variables blocks
+        and applies them to the appropriate rules.
+        Also checks that selectors with pseudo-states and compound structure
+        (e.g., #id .class:hover) are maintained with substituted values.
+        """
+        self.maxDiff = None
+        qss = """
+        @variables {
+            --primary-color: purple;
+            --font-family: "Segoe UI";
+            --font-size: 10pt;
+        }
+        #topMenu .QPushButton {    
+            background-position: left center;
+            background-repeat: no-repeat;
+            border: none;
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            background-color: var(--primary-color);
+            text-align: left;
+        }
+        #topMenu .QPushButton:hover {
+            font-size: var(--font-size);
+        }
+        #topMenu .QPushButton:pressed {    
+            background-color: red;
+            color: var(--primary-color);
+        }"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        expected = """#topMenu .QPushButton {
+    background-position: left center;
+    background-repeat: no-repeat;
+    border: none;
+    font-family: "Segoe UI";
+    font-size: 10pt;
+    background-color: purple;
+    text-align: left;
+}
+
+#topMenu .QPushButton:hover {
+    font-size: 10pt;
+}
+
+#topMenu .QPushButton:pressed {
+    background-color: red;
+    color: purple;
+}
+"""
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle multiple distinct rules",
+        )
+
+    def test_to_string_empty_qss(self) -> None:
+        """Test to_string() with empty QSS input."""
+        qss = ""
+        self.parser.parse(qss)
+        expected = ""
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should return empty string for empty QSS",
+        )
+
+    def test_to_string_comments_only(self) -> None:
+        """Test to_string() with QSS containing only comments."""
+        qss = """
+        /* This is a comment */
+        /* Another comment */
+        """
+        self.parser.parse(qss)
+        expected = ""
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should return empty string for QSS with only comments",
+        )
+
+    def test_to_string_complex_nested_selectors(self) -> None:
+        """Test to_string() with complex nested selectors."""
+        qss = """
+        QFrame > QPushButton#myButton[data-value="nested"] {
+            color: purple;
+            margin: 10px;
+        }
+        """
+        self.parser.parse(qss)
+        expected = 'QFrame > QPushButton#myButton[data-value="nested"] {\n    color: purple;\n    margin: 10px;\n}\n'
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "to_string should handle complex nested selectors",
         )
 
 
