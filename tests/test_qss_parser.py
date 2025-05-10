@@ -160,12 +160,12 @@ class TestQSSParserValidation(unittest.TestCase):
 
     def test_check_format_single_line_rule(self) -> None:
         """
-        Test QSS with a valid single-line rule.
+        Test validation of a single-line QSS rule.
         """
         qss: str = """
-        #titleLeftApp { font: 12pt "Segoe UI Semibold"; }
-        QPushButton { color: blue; }
-        #titleApp QPushButton, QScrollbar::handle:vertical { font: 12pt "Segoe UI Semibold"; }
+        /* Comment */
+        QWidget {color: blue;}
+        #titleApp QPushButton {color: red;}
         """
         errors: List[str] = self.validator.check_format(qss)
         self.assertEqual(errors, [], "Valid single-line rule should return no errors")
@@ -299,6 +299,174 @@ class TestQSSParserValidation(unittest.TestCase):
         expected: List[str] = ["Error on line 3: Property missing ';': color:"]
         self.assertEqual(
             errors, expected, "Should report empty value property as malformed"
+        )
+
+    def test_check_format_invalid_class_id_spacing(self) -> None:
+        """
+        Test QSS with invalid selector missing space between class and ID (e.g., QPushButton#btn_save).
+        """
+        qss: str = """
+        QPushButton#btn_save {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Invalid selector: 'QPushButton#btn_save'. "
+            "Space required between class and ID in 'QPushButton#btn_save'"
+        ]
+        self.assertEqual(
+            errors, expected, "Should report missing space between class and ID"
+        )
+
+    def test_check_format_various_combinator_spacing(self) -> None:
+        """
+        Test QSS with various valid spacing around combinators.
+        """
+        qss: str = """
+        QWidget > QPushButton {
+            color: blue;
+        }
+        QWidget>QPushButton {
+            color: red;
+        }
+        QWidget    >    QPushButton {
+            color: green;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(
+            errors, [], "Various spacing around combinators should be valid"
+        )
+
+    def test_check_format_invalid_pseudo_spacing(self) -> None:
+        """
+        Test QSS with invalid spacing before pseudo-states or pseudo-elements.
+        """
+        qss: str = """
+        #btn_save :hover {
+            color: blue;
+        }
+        #btn_save ::pressed {
+            background: red;
+        }
+        QPushButton #btn_save :hover {
+            border: 1px solid black;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Invalid spacing in selector: '#btn_save :hover'. "
+            "No space allowed between '#btn_save' and ':hover' (pseudo-state)",
+            "Error on line 5: Invalid spacing in selector: '#btn_save ::pressed'. "
+            "No space allowed between '#btn_save' and '::pressed' (pseudo-element)",
+            "Error on line 8: Invalid spacing in selector: 'QPushButton #btn_save :hover'. "
+            "No space allowed between '#btn_save' and ':hover' (pseudo-state)",
+        ]
+        self.assertEqual(
+            errors,
+            expected,
+            "Should report invalid spacing before pseudo-states/elements",
+        )
+
+    def test_check_format_valid_attribute_spacing(self) -> None:
+        """
+        Test QSS with valid selectors with or without space before attribute selectors.
+        """
+        qss: str = """
+        QPushButton[selected="true"] {
+            color: blue;
+        }
+        QPushButton [selected="true"] {
+            background: red;
+        }
+        #btn_save[selected="true"] {
+            border: 1px solid black;
+        }
+        #btn_save [selected="true"] {
+            font-size: 12px;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(
+            errors,
+            [],
+            "Selectors with or without space before attributes should be valid",
+        )
+
+    def test_check_format_valid_complex_selector(self) -> None:
+        """
+        Test QSS with valid complex selectors from the provided example.
+        """
+        qss: str = """
+        QPushButton #btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save[selected="true"]:hover::pressed {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save:vertical {
+            color: orange;
+            width: 10px;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton #btn_save:hover:!selected {
+            background-color: rgb(52, 59, 72);
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Valid complex selectors should return no errors")
+
+    def test_check_format_invalid_selectors_from_example(self) -> None:
+        """
+        Test QSS with invalid selectors from the provided example (e.g., QPushButton#btn_save, #btn_save :hover).
+        """
+        self.maxDiff = None
+        qss: str = """
+        QPushButton#btn_save[selected="true"]:hover {
+            border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton#btn_save[selected="true"]:hover::pressed {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton#btn_save {
+            color: red;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton#btn_save:vertical {
+            color: orange;
+            width: 10px;
+            background-color: rgb(98, 114, 164);
+        }
+        QPushButton#btn_save:hover:!selected {
+            color: green;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Invalid selector: 'QPushButton#btn_save[selected=\"true\"]:hover'. "
+            "Space required between class and ID in 'QPushButton#btn_save[selected=\"true\"]:hover'",
+            "Error on line 6: Invalid selector: 'QPushButton#btn_save[selected=\"true\"]:hover::pressed'. "
+            "Space required between class and ID in 'QPushButton#btn_save[selected=\"true\"]:hover::pressed'",
+            "Error on line 10: Invalid selector: 'QPushButton#btn_save'. "
+            "Space required between class and ID in 'QPushButton#btn_save'",
+            "Error on line 14: Invalid selector: 'QPushButton#btn_save:vertical'. "
+            "Space required between class and ID in 'QPushButton#btn_save:vertical'",
+            "Error on line 19: Invalid selector: 'QPushButton#btn_save:hover:!selected'. "
+            "Space required between class and ID in 'QPushButton#btn_save:hover:!selected'",
+        ]
+        self.assertEqual(
+            errors,
+            expected,
+            "Should report missing space between class and ID for all invalid selectors",
         )
 
 
