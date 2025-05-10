@@ -1414,4 +1414,11 @@ class QSSParser:
 
     def __repr__(self) -> str:
         """Return a string representation of the parser."""
-        return "\n\n".join(str(rule) for rule in self._state.rules)
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return a string representation of the parser in standard QSS format."""
+        return "\n".join(
+            QSSFormatter.format_rule(rule.selector, rule.properties)
+            for rule in self._state.rules
+        )
