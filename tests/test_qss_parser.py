@@ -409,7 +409,7 @@ class TestQSSParserParsing(unittest.TestCase):
 
     def test_parse_duplicate_properties(self) -> None:
         """
-        Test parsing QSS with duplicate properties in a single rule.
+        Test parsing QSS with duplicate properties in a single rule, ensuring the last value is kept.
         """
         parser: QSSParser = QSSParser()
         qss: str = """
@@ -423,7 +423,12 @@ class TestQSSParserParsing(unittest.TestCase):
         self.assertEqual(
             len(parser._state.rules[0].properties),
             2,
-            "Should keep duplicate properties",
+            "Should keep only the last value for duplicate properties",
+        )
+        self.assertEqual(
+            parser._state.rules[0].properties[1].value,
+            "red",
+            "Should retain the last value (red) for duplicate property 'color'",
         )
 
     def test_parse_attribute_selector_complex(self) -> None:
@@ -1239,11 +1244,10 @@ QFrame {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
-    def test_get_styles_for_attribute_selector_with_class_and_id_with_extense_qss(
-        self,
-    ) -> None:
+    def test_qss_parser_handles_attribute_and_pseudo_combinations(self) -> None:
         """
         Test style retrieval for a selector with class and id with attribute and pseudo-state.
+        Ensures the last value for duplicate properties is retained (CSS standard).
         """
         self.maxDiff = None
         parser: QSSParser = QSSParser()
@@ -1283,6 +1287,12 @@ QFrame {
             font-size: 10px;
             background-color: rgb(98, 114, 164);
         }
+        QPushButton #btn_save:hover:!selected {
+            background-color: rgb(52, 59, 72);
+        }
+        QPushButton #btn_save:hover:!selected {
+            color: green;
+        }
         """
         errors: List[str] = parser.check_format(qss)
         self.assertEqual(
@@ -1292,22 +1302,35 @@ QFrame {
         parser.parse(qss)
         self.assertEqual(
             len(parser._state.rules),
-            4,
-            "Should parse one rule and one base rule without pseudo-states",
+            5,
+            "Should parse four unique rules after merging duplicates",
         )
-        self.assertEqual(
-            parser._state.rules[0].selector,
-            'QPushButton #btn_save[selected="true"]:hover',
+        hover_rule = next(
+            (
+                r
+                for r in parser._state.rules
+                if r.selector == 'QPushButton #btn_save[selected="true"]:hover'
+            ),
+            None,
         )
-        self.assertEqual(len(parser._state.rules[0].properties), 3)
-        self.assertEqual(parser._state.rules[0].properties[0].name, "border-left")
+        self.assertIsNotNone(hover_rule, "Hover rule should exist")
         self.assertEqual(
-            parser._state.rules[0].properties[0].value,
+            len(hover_rule.properties), 3, "Hover rule should have three properties"
+        )
+        self.assertEqual(hover_rule.properties[0].name, "border-left")
+        self.assertEqual(
+            hover_rule.properties[0].value,
             "22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0))",
         )
-        self.assertEqual(parser._state.rules[0].properties[1].name, "background-color")
+        self.assertEqual(hover_rule.properties[1].name, "background-color")
         self.assertEqual(
-            parser._state.rules[0].properties[1].value, "rgb(98, 114, 164)"
+            hover_rule.properties[1].value,
+            "rgb(97, 114, 164)",
+            "Should retain the last background-color value",
+        )
+        self.assertEqual(hover_rule.properties[2].name, "color")
+        self.assertEqual(
+            hover_rule.properties[2].value, "red", "Should retain the last color value"
         )
 
         widget: Mock = Mock()
@@ -1315,23 +1338,27 @@ QFrame {
         widget.metaObject.return_value.className.return_value = "QPushButton"
         stylesheet: str = parser.get_styles_for(widget)
         expected: str = """QPushButton #btn_save {
-    color: red;
+    color: blue;
     background-color: rgb(98, 114, 164);
 }
+QPushButton #btn_save:hover:!selected {
+    background-color: rgb(52, 59, 72);
+    color: green;
+}
 QPushButton #btn_save:vertical {
-    color: orange;
+    color: blue;
     width: 10px;
     background-color: rgb(98, 114, 164);
     font-size: 10px;
 }
 QPushButton #btn_save[selected="true"]:hover {
     border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
-    background-color: rgb(98, 114, 164);
+    background-color: rgb(97, 114, 164);
     color: red;
 }
 QPushButton #btn_save[selected="true"]:hover::pressed {
-    color: red;
-    background-color: rgb(98, 114, 164);
+    color: blue;
+    background-color: rgb(98, 114, 152);
     font-size: 10px;
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())

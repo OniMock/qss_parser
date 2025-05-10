@@ -1022,6 +1022,7 @@ class SelectorPlugin(QSSParserPlugin):
     def _merge_or_append_rule(self, rule: QSSRule, state: ParserState) -> None:
         """
         Merge a rule with existing rules or append it to the rule list, ensuring no duplicates.
+        When merging properties, retain the last value for duplicate property names (CSS standard).
 
         Args:
             rule: The rule to merge or append.
@@ -1030,10 +1031,10 @@ class SelectorPlugin(QSSParserPlugin):
         self._logger.debug(f"Merging/appending rule: {rule.selector}")
         for existing_rule in state.rules:
             if existing_rule.selector == rule.selector:
+                # Merge properties, keeping the last value for duplicates (CSS standard)
                 prop_map = {p.name: p for p in existing_rule.properties}
                 for prop in rule.properties:
-                    if prop.name not in prop_map:
-                        prop_map[prop.name] = prop
+                    prop_map[prop.name] = prop  # Overwrite with the latest value
                 existing_rule.properties = list(prop_map.values())
                 existing_rule.original = QSSFormatter.format_rule(
                     existing_rule.selector, existing_rule.properties
@@ -1050,12 +1051,12 @@ class SelectorPlugin(QSSParserPlugin):
             and "," not in rule.selector
         ):
             base_rule = rule.clone_without_pseudo_elements()
+            # Check if base rule already exists to avoid duplicates
             for existing_rule in state.rules:
                 if existing_rule.selector == base_rule.selector:
                     prop_map = {p.name: p for p in existing_rule.properties}
                     for prop in base_rule.properties:
-                        if prop.name not in prop_map:
-                            prop_map[prop.name] = prop
+                        prop_map[prop.name] = prop  # Overwrite with the latest value
                     existing_rule.properties = list(prop_map.values())
                     existing_rule.original = QSSFormatter.format_rule(
                         existing_rule.selector, existing_rule.properties
