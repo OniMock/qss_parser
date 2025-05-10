@@ -469,6 +469,73 @@ class TestQSSParserValidation(unittest.TestCase):
             "Should report missing space between class and ID for all invalid selectors",
         )
 
+    def test_check_format_multiple_selectors_comma_separated(self) -> None:
+        """
+        Test QSS with multiple selectors separated by commas, expecting no errors.
+        """
+        qss: str = """
+        #myButton,
+        QFrame,
+        #otherButton,
+        QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(
+            errors, [], "Multiple comma-separated selectors should be valid"
+        )
+
+    def test_check_format_multiple_selectors_comma_separated_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test QSS with multiple selectors including pseudo-states, expecting errors for invalid combinations.
+        """
+        qss: str = """
+        #myButton:hover,
+        QFrame:disabled {
+            color: red;
+        }
+        """
+        self.maxDiff = None
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error: Pseudo-states in comma-separated selectors are not supported. "
+            "Split into separate rules for #myButton:hover, QFrame:disabled"
+        ]
+        self.assertEqual(
+            errors,
+            expected,
+            "Should report invalid pseudo-state in comma-separated selectors",
+        )
+
+    def test_check_format_multiple_selectors_comma_separated_with_spaces(self) -> None:
+        """
+        Test QSS with multiple selectors separated by commas with various spacing patterns.
+        """
+        qss: str = """
+        #myButton,  QFrame,  #otherButton  ,QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Various spacing around commas should be valid")
+
+    def test_check_format_multiple_selectors_comma_separated_without_spaces(
+        self,
+    ) -> None:
+        """
+        Test QSS with multiple selectors separated by commas without spacing patterns.
+        """
+        qss: str = """
+        #myButton,QFrame,#otherButton,QPushButton {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(errors, [], "Without spacing around commas should be valid")
+
 
 class TestQSSParserParsing(unittest.TestCase):
     def setUp(self) -> None:
@@ -741,6 +808,74 @@ class TestQSSParserParsing(unittest.TestCase):
         self.assertEqual(len(rule.properties), 1)
         self.assertEqual(rule.properties[0].name, "color")
         self.assertEqual(rule.properties[0].value, "#0000ff")
+
+    def test_parse_multiple_selectors_comma_separated(self) -> None:
+        """
+        Test parsing QSS with multiple comma-separated selectors into separate rules.
+        """
+        qss: str = """
+        #myButton, QFrame, .customClass {
+            color: blue;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+
+        self.assertEqual(len(parser._state.rules), 3)
+
+        selectors = {rule.selector for rule in parser._state.rules}
+        self.assertEqual(selectors, {"#myButton", "QFrame", ".customClass"})
+
+        for rule in parser._state.rules:
+            self.assertEqual(len(rule.properties), 1)
+            self.assertEqual(rule.properties[0].name, "color")
+            self.assertEqual(rule.properties[0].value, "blue")
+
+    def test_parse_multiple_selectors_comma_separated_without_spaces(self) -> None:
+        """
+        Test parsing QSS with multiple comma-separated selectors into separate rules.
+        """
+        qss: str = """
+        #myButton,QFrame,.customClass {
+            color: blue;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+
+        self.assertEqual(len(parser._state.rules), 3)
+
+        selectors = {rule.selector for rule in parser._state.rules}
+        self.assertEqual(selectors, {"#myButton", "QFrame", ".customClass"})
+
+        for rule in parser._state.rules:
+            self.assertEqual(len(rule.properties), 1)
+            self.assertEqual(rule.properties[0].name, "color")
+            self.assertEqual(rule.properties[0].value, "blue")
+
+    def test_parse_multiple_selectors_comma_separated_by_line(self) -> None:
+        """
+        Test parsing QSS with multiple comma-separated by line selectors into separate rules.
+        """
+        qss: str = """
+        #myButton,
+        QFrame,
+        .customClass {
+            color: blue;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+
+        self.assertEqual(len(parser._state.rules), 3)
+
+        selectors = {rule.selector for rule in parser._state.rules}
+        self.assertEqual(selectors, {"#myButton", "QFrame", ".customClass"})
+
+        for rule in parser._state.rules:
+            self.assertEqual(len(rule.properties), 1)
+            self.assertEqual(rule.properties[0].name, "color")
+            self.assertEqual(rule.properties[0].value, "blue")
 
 
 class TestQSSParserStyleSelection(unittest.TestCase):
