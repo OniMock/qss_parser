@@ -15,7 +15,6 @@ from typing import (
     Dict,
     Final,
     List,
-    Match,
     Optional,
     Pattern,
     Protocol,
@@ -24,14 +23,31 @@ from typing import (
     TypedDict,
 )
 
-# === Core Data Structures ===
+# === Constants ===
+
+
+class Constants:
+    """Centralized constants for regex patterns and other static values."""
+
+    ATTRIBUTE_PATTERN: Final[str] = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
+    COMPILED_ATTRIBUTE_PATTERN: Final[Pattern[str]] = re.compile(ATTRIBUTE_PATTERN)
+    VARIABLE_PATTERN: Final[str] = r"var\((--[\w-]+)\)"
+    COMPLETE_RULE_PATTERN: Final[str] = r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$"
+    PSEUDO_PATTERN: Final[str] = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*(\w+)"
+    CLASS_ID_PATTERN: Final[str] = r"(\w+)(#[-\w]+)"
+    COMBINATOR_PATTERN: Final[str] = (
+        r"(\w+|#[-\w]+|\[.*?\])([> ]{1,2})(\w+|#[-\w]+|\[.*?\])"
+    )
+
+
+# === Protocols ===
 
 
 class MetaObjectProtocol(Protocol):
     """Protocol for meta-objects providing widget metadata."""
 
     def className(self) -> str:
-        """Returns the widget's class name (e.g., 'QPushButton')."""
+        """Return the widget's class name (e.g., 'QPushButton')."""
         ...
 
 
@@ -39,12 +55,63 @@ class WidgetProtocol(Protocol):
     """Protocol for widgets used in QSS style application."""
 
     def objectName(self) -> str:
-        """Returns the widget's object name (e.g., 'myButton')."""
+        """Return the widget's object name (e.g., 'myButton')."""
         ...
 
     def metaObject(self) -> MetaObjectProtocol:
-        """Returns the widget's meta-object containing metadata."""
+        """Return the widget's meta-object containing metadata."""
         ...
+
+
+class PropertyProcessorProtocol(Protocol):
+    """Protocol for processing QSS properties."""
+
+    def process_property(
+        self,
+        line: str,
+        rules: List["QSSRule"],
+        variable_manager: "VariableManager",
+        line_num: int,
+    ) -> None:
+        """
+        Process a property line and add it to the given rules.
+
+        Args:
+            line: The property line to process (e.g., 'color: blue;').
+            rules: The list of rules to add the property to.
+            variable_manager: Manager for resolving variables in property values.
+            line_num: Line number for error reporting.
+        """
+        ...
+
+
+class RuleHandlerProtocol(Protocol):
+    """Protocol for handling QSS rules."""
+
+    def handle_rule(self, rule: "QSSRule") -> None:
+        """
+        Handle a new or updated rule.
+
+        Args:
+            rule: The rule to add or merge.
+        """
+        ...
+
+
+class ErrorHandlerProtocol(Protocol):
+    """Protocol for handling errors."""
+
+    def dispatch_error(self, error: str) -> None:
+        """
+        Dispatch an error message to registered handlers.
+
+        Args:
+            error: The error message to dispatch.
+        """
+        ...
+
+
+# === Core Data Structures ===
 
 
 class QSSPropertyDict(TypedDict):
@@ -59,7 +126,7 @@ class QSSProperty:
 
     def __init__(self, name: str, value: str) -> None:
         """
-        Initialize a QSS property.
+        Initialize a QSS property with normalized name and value.
 
         Args:
             name: The property name (e.g., 'color').
@@ -111,7 +178,7 @@ class QSSRule:
 
     def add_property(self, name: str, value: str) -> None:
         """
-        Add a property to the rule.
+        Add a normalized property to the rule.
 
         Args:
             name: The property name.
@@ -156,7 +223,7 @@ class QSSRule:
         return self.selector == other.selector and self.properties == other.properties
 
 
-# === Parsing Utilities ===
+# === Utility Classes ===
 
 
 class VariableManager:
@@ -167,19 +234,32 @@ class VariableManager:
         self._variables: Dict[str, str] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)
 
-    def parse_variables(self, block: str) -> List[str]:
+    def parse_variables(self, block: str, start_line: int = 1) -> List[str]:
         """
         Parse a @variables block and store the variables.
 
-        Args:
-            block: The content of the @variables block (e.g., '--primary-color: #ffffff;').
+        Parameters
+        ----------
+        block : str
+            The content of the @variables block (e.g., '--primary-color: #ffffff;').
+        start_line : int, optional
+            Starting line number for error reporting, by default 1.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages for invalid variable declarations.
+
+        Examples
+        --------
+        >>> vm = VariableManager()
+        >>> errors = vm.parse_variables('--primary-color: #ffffff; --invalid:;')
+        >>> print(errors)
+        ['Malformed variable declaration on line 2: --invalid:']
         """
         errors: List[str] = []
         lines = block.split(";")
-        for i, line in enumerate(lines, start=1):
+        for i, line in enumerate(lines, start=start_line):
             line = line.strip()
             if not line:
                 continue
@@ -200,16 +280,27 @@ class VariableManager:
         """
         Resolve var(--name) references in a property value recursively.
 
-        Args:
-            value: The property value containing var(--name) references.
+        Parameters
+        ----------
+        value : str
+            The property value containing var(--name) references.
 
-        Returns:
+        Returns
+        -------
+        Tuple[str, Optional[str]]
             A tuple of the resolved value and an error message if a variable is undefined or a loop is detected.
+
+        Examples
+        --------
+        >>> vm = VariableManager()
+        >>> vm.parse_variables('--color: #ff0000;')
+        >>> resolved, error = vm.resolve_variable('var(--color)')
+        >>> print(resolved, error)
+        '#ff0000' None
         """
         visited: Set[str] = set()
-        pattern: Final[str] = r"var\((--[\w-]+)\)"
 
-        def replace_var(match: Match[str]) -> str:
+        def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             if var_name in visited:
                 self._logger.warning(
@@ -220,14 +311,16 @@ class VariableManager:
                 return match.group(0)
             visited.add(var_name)
             resolved_value = self._variables[var_name]
-            nested_value = re.sub(pattern, replace_var, resolved_value)
+            nested_value = re.sub(
+                Constants.VARIABLE_PATTERN, replace_var, resolved_value
+            )
             visited.remove(var_name)
             return nested_value
 
-        resolved_value = re.sub(pattern, replace_var, value)
+        resolved_value = re.sub(Constants.VARIABLE_PATTERN, replace_var, value)
         undefined_vars = [
             match.group(1)
-            for match in re.finditer(pattern, value)
+            for match in re.finditer(Constants.VARIABLE_PATTERN, value)
             if match.group(1) not in self._variables and match.group(1) not in visited
         ]
         error = (
@@ -241,34 +334,39 @@ class VariableManager:
 class SelectorUtils:
     """Utility class for parsing and normalizing QSS selectors."""
 
-    _ATTRIBUTE_PATTERN: Final[str] = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
-    _COMPILED_ATTRIBUTE_PATTERN: Final[Pattern[str]] = re.compile(_ATTRIBUTE_PATTERN)
-
     @staticmethod
     def is_complete_rule(line: str) -> bool:
         """
         Check if the line is a complete QSS rule (selector + { + properties + }).
 
-        Args:
-            line: The line to check.
+        Parameters
+        ----------
+        line : str
+            The line to check.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line is a complete QSS rule, else False.
         """
-        return bool(re.match(r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$", line))
+        return bool(re.match(Constants.COMPLETE_RULE_PATTERN, line))
 
     @staticmethod
     def extract_attributes(selector: str) -> List[str]:
         """
         Extract attribute selectors from a QSS selector.
 
-        Args:
-            selector: The selector to parse (e.g., 'QPushButton[data-value="complex"]').
+        Parameters
+        ----------
+        selector : str
+            The selector to parse (e.g., 'QPushButton[data-value="complex"]').
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of attribute selectors (e.g., ['[data-value="complex"]']).
         """
-        return SelectorUtils._COMPILED_ATTRIBUTE_PATTERN.findall(selector)
+        return Constants.COMPILED_ATTRIBUTE_PATTERN.findall(selector)
 
     @staticmethod
     def normalize_selector(selector: str) -> str:
@@ -276,11 +374,20 @@ class SelectorUtils:
         Normalize a selector by removing extra spaces around combinators and between parts,
         while preserving spaces within attribute selectors.
 
-        Args:
-            selector: The selector to normalize.
+        Parameters
+        ----------
+        selector : str
+            The selector to normalize.
 
-        Returns:
+        Returns
+        -------
+        str
             The normalized selector.
+
+        Examples
+        --------
+        >>> SelectorUtils.normalize_selector('QPushButton   >   #myButton')
+        'QPushButton > #myButton'
         """
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         normalized_selectors = []
@@ -308,18 +415,27 @@ class SelectorUtils:
         """
         Parse a selector into object name, class name, attributes, and pseudo-states.
 
-        Args:
-            selector: The selector to parse.
+        Parameters
+        ----------
+        selector : str
+            The selector to parse.
 
-        Returns:
+        Returns
+        -------
+        Tuple[Optional[str], Optional[str], List[str], List[str]]
             A tuple of (object_name, class_name, attributes, pseudo_states).
+
+        Examples
+        --------
+        >>> SelectorUtils.parse_selector('#myButton:hover')
+        ('myButton', None, [], ['hover'])
         """
         object_name: Optional[str] = None
         class_name: Optional[str] = None
         attributes = SelectorUtils.extract_attributes(selector)
         pseudo_states: List[str] = []
 
-        selector_clean = SelectorUtils._COMPILED_ATTRIBUTE_PATTERN.sub("", selector)
+        selector_clean = Constants.COMPILED_ATTRIBUTE_PATTERN.sub("", selector)
         selector_clean = re.sub(r"::\w+", "", selector_clean)
         parts = selector_clean.split(":")
         main_selector = parts[0].strip()
@@ -341,11 +457,16 @@ class SelectorUtils:
         """
         Validate the syntax of a QSS selector, checking for spacing issues.
 
-        Args:
-            selector: The selector to validate.
-            line_num: The line number for error reporting.
+        Parameters
+        ----------
+        selector : str
+            The selector to validate.
+        line_num : int
+            The line number for error reporting.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages for invalid selector syntax.
         """
         errors: List[str] = []
@@ -362,8 +483,7 @@ class SelectorUtils:
                     return errors
 
         for sel in selectors:
-            pseudo_pattern = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*(\w+)"
-            matches = re.finditer(pseudo_pattern, sel)
+            matches = re.finditer(Constants.PSEUDO_PATTERN, sel)
             for match in matches:
                 prefix, colon, pseudo = match.groups()
                 full_match = match.group(0)
@@ -374,19 +494,15 @@ class SelectorUtils:
                         f"No space allowed between '{prefix}' and '{colon}{pseudo}' ({pseudo_type})"
                     )
 
-            class_id_pattern = r"(\w+)(#[-\w]+)"
             parts = re.split(r"\s+", sel)
             for part in parts:
-                if re.match(class_id_pattern, part):
+                if re.match(Constants.CLASS_ID_PATTERN, part):
                     errors.append(
                         f"Error on line {line_num}: Invalid selector: '{sel}'. "
                         f"Space required between class and ID in '{part}'"
                     )
 
-            combinator_pattern = (
-                r"(\w+|#[-\w]+|\[.*?\])([> ]{1,2})(\w+|#[-\w]+|\[.*?\])"
-            )
-            for match in re.finditer(combinator_pattern, sel):
+            for match in re.finditer(Constants.COMBINATOR_PATTERN, sel):
                 left, combinator, right = match.groups()
                 if combinator not in [" ", ">"]:
                     errors.append(
@@ -405,15 +521,83 @@ class QSSFormatter:
         """
         Format a QSS rule in the standardized QSS format.
 
-        Args:
-            selector: The selector for the rule.
-            properties: The properties to include.
+        Parameters
+        ----------
+        selector : str
+            The selector for the rule.
+        properties : List[QSSProperty]
+            The properties to include.
 
-        Returns:
+        Returns
+        -------
+        str
             The formatted rule string.
+
+        Examples
+        --------
+        >>> prop = QSSProperty('color', 'blue')
+        >>> QSSFormatter.format_rule('QPushButton', [prop])
+        'QPushButton {\n    color: blue;\n}\n'
         """
         props = "\n".join(f"    {p.name}: {p.value};" for p in properties)
         return f"{selector} {{\n{props}\n}}\n"
+
+
+class DefaultPropertyProcessor:
+    """Default implementation for processing QSS properties."""
+
+    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
+        """
+        Initialize the property processor.
+
+        Parameters
+        ----------
+        error_handler : ErrorHandlerProtocol
+            Callback for reporting errors during property processing.
+        """
+        self._error_handler = error_handler
+        self._logger: logging.Logger = logging.getLogger(__name__)
+
+    def process_property(
+        self,
+        line: str,
+        rules: List[QSSRule],
+        variable_manager: VariableManager,
+        line_num: int,
+    ) -> None:
+        """
+        Process a property line and add it to the given rules.
+
+        Parameters
+        ----------
+        line : str
+            The property line to process (e.g., 'color: blue;').
+        rules : List[QSSRule]
+            The list of rules to add the property to.
+        variable_manager : VariableManager
+            Manager for resolving variables in property values.
+        line_num : int
+            Line number for error reporting.
+        """
+        line = line.rstrip(";").strip()
+        if not rules or not line:
+            self._logger.debug(
+                f"Skipping empty property line or no rules on line {line_num}"
+            )
+            return
+        parts = line.split(":", 1)
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            self._logger.warning(f"Malformed property on line {line_num}: {line}")
+            return
+        name, value = parts
+        resolved_value, error = variable_manager.resolve_variable(value.strip())
+        if error:
+            self._error_handler.dispatch_error(f"Error on line {line_num}: {error}")
+        normalized_line = f"{name.strip()}: {resolved_value};"
+        for rule in rules:
+            rule.original += f"    {normalized_line}\n"
+            rule.add_property(name.strip(), resolved_value)
+        self._logger.debug(f"Processed property on line {line_num}: {normalized_line}")
 
 
 # === Parser State and Validation ===
@@ -433,6 +617,7 @@ class ParserState:
         self.original_selector: Optional[str] = None
         self.current_rules: List[QSSRule] = []
         self.variable_buffer: str = ""
+        self.current_line: int = 1
 
     def reset(self) -> None:
         """Reset the parser state to initial values."""
@@ -445,6 +630,7 @@ class ParserState:
         self.original_selector = None
         self.current_rules = []
         self.variable_buffer = ""
+        self.current_line = 1
 
 
 class QSSSyntaxChecker:
@@ -459,10 +645,14 @@ class QSSSyntaxChecker:
         """
         Validate the format of QSS text for syntax errors.
 
-        Args:
-            qss_text: The QSS text to validate.
+        Parameters
+        ----------
+        qss_text : str
+            The QSS text to validate.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages in the format: "Error on line {num}: {description}: {content}".
         """
         errors: List[str] = []
@@ -602,11 +792,16 @@ class QSSSyntaxChecker:
         """
         Validate a complete QSS rule in a single line.
 
-        Args:
-            line: The line containing the complete rule.
-            line_num: The line number.
+        Parameters
+        ----------
+        line : str
+            The line containing the complete rule.
+        line_num : int
+            The line number.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages for the rule.
         """
         errors: List[str] = []
@@ -646,10 +841,14 @@ class QSSSyntaxChecker:
         """
         Check if the line could be a selector (but not a complete rule or property).
 
-        Args:
-            line: The line to check.
+        Parameters
+        ----------
+        line : str
+            The line to check.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line looks like a selector, else False.
         """
         return (
@@ -667,11 +866,16 @@ class QSSSyntaxChecker:
         """
         Check if the line starts a comment block.
 
-        Args:
-            line: The line to check.
-            in_comment: Whether currently inside a comment block.
+        Parameters
+        ----------
+        line : str
+            The line to check.
+        in_comment : bool
+            Whether currently inside a comment block.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line starts a new comment block, else False.
         """
         return line.startswith("/*") and not in_comment
@@ -680,11 +884,16 @@ class QSSSyntaxChecker:
         """
         Validate a line containing a selector and an opening brace.
 
-        Args:
-            line: The line to validate.
-            line_num: The line number.
+        Parameters
+        ----------
+        line : str
+            The line to validate.
+        line_num : int
+            The line number.
 
-        Returns:
+        Returns
+        -------
+        Tuple[List[str], str]
             A tuple of error messages and the extracted selector.
         """
         errors: List[str] = []
@@ -701,10 +910,14 @@ class QSSSyntaxChecker:
         """
         Check if the line contains a property (e.g., 'color: blue;').
 
-        Args:
-            line: The line to check.
+        Parameters
+        ----------
+        line : str
+            The line to check.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line is a valid property line, else False.
         """
         return ":" in line and ";" in line and not line.startswith("@variables")
@@ -715,12 +928,18 @@ class QSSSyntaxChecker:
         """
         Process a property line, accumulating in the buffer and checking for semicolons.
 
-        Args:
-            line: The current line to process.
-            buffer: The buffer of accumulated properties.
-            line_num: The current line number.
+        Parameters
+        ----------
+        line : str
+            The current line to process.
+        buffer : str
+            The buffer of accumulated properties.
+        line_num : int
+            The current line number.
 
-        Returns:
+        Returns
+        -------
+        Tuple[str, List[str]]
             Updated buffer and list of error messages.
         """
         errors: List[str] = []
@@ -750,11 +969,16 @@ class QSSSyntaxChecker:
         """
         Validate pending properties in the buffer for missing semicolons.
 
-        Args:
-            buffer: The buffer containing pending properties.
-            line_num: The line number for errors.
+        Parameters
+        ----------
+        buffer : str
+            The buffer containing pending properties.
+        line_num : int
+            The line number for errors.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages for invalid properties.
         """
         if buffer.strip() and not buffer.endswith(";"):
@@ -767,13 +991,20 @@ class QSSSyntaxChecker:
         """
         Validate final conditions, such as unclosed braces or pending properties.
 
-        Args:
-            open_braces: Number of open braces.
-            current_selector: The current selector being processed.
-            buffer: The buffer of pending properties.
-            last_line_num: The last line number processed.
+        Parameters
+        ----------
+        open_braces : int
+            Number of open braces.
+        current_selector : str
+            The current selector being processed.
+        buffer : str
+            The buffer of pending properties.
+        last_line_num : int
+            The last line number processed.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages for final validation issues.
         """
         errors: List[str] = []
@@ -797,10 +1028,14 @@ class QSSValidator:
         """
         Validate the format of QSS text.
 
-        Args:
-            qss_text: The QSS text to validate.
+        Parameters
+        ----------
+        qss_text : str
+            The QSS text to validate.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages.
         """
         return self._checker.check_format(qss_text)
@@ -827,15 +1062,31 @@ class QSSStyleSelector:
         """
         Retrieve QSS styles for a widget from a list of rules.
 
-        Args:
-            rules: List of QSSRule objects to search.
-            widget: The widget to retrieve styles for.
-            fallback_class: Fallback class to use if no styles are found.
-            additional_selectors: Additional selectors to include.
-            include_class_if_object_name: Whether to include class styles if an object name is present.
+        Parameters
+        ----------
+        rules : List[QSSRule]
+            List of QSSRule objects to search.
+        widget : WidgetProtocol
+            The widget to retrieve styles for.
+        fallback_class : Optional[str], optional
+            Fallback class to use if no styles are found, by default None.
+        additional_selectors : Optional[List[str]], optional
+            Additional selectors to include, by default None.
+        include_class_if_object_name : bool, optional
+            Whether to include class styles if an object name is present, by default False.
 
-        Returns:
+        Returns
+        -------
+        str
             The concatenated QSS styles for the widget.
+
+        Examples
+        --------
+        >>> selector = QSSStyleSelector()
+        >>> rule = QSSRule('QPushButton', original='QPushButton {\\n    color: blue;\\n}\\n')
+        >>> styles = selector.get_styles_for([rule], widget)
+        >>> print(styles)
+        'QPushButton {\n    color: blue;\n}'
         """
         object_name: str = widget.objectName()
         class_name: str = widget.metaObject().className()
@@ -889,13 +1140,20 @@ class QSSStyleSelector:
         """
         Retrieve rules matching a given selector, considering objectName and className constraints.
 
-        Args:
-            rules: List of QSSRule objects to search.
-            selector: The selector to match (e.g., 'QPushButton', '#myButton').
-            object_name: The widget's objectName.
-            class_name: The widget's className.
+        Parameters
+        ----------
+        rules : List[QSSRule]
+            List of QSSRule objects to search.
+        selector : str
+            The selector to match (e.g., 'QPushButton', '#myButton').
+        object_name : str
+            The widget's objectName.
+        class_name : str
+            The widget's className.
 
-        Returns:
+        Returns
+        -------
+        List[QSSRule]
             List of matching QSS rules.
         """
         matching_rules: Set[QSSRule] = set()
@@ -908,7 +1166,7 @@ class QSSStyleSelector:
                     matching_rules.add(rule)
                     continue
 
-                sel_without_attrs = SelectorUtils._COMPILED_ATTRIBUTE_PATTERN.sub(
+                sel_without_attrs = Constants.COMPILED_ATTRIBUTE_PATTERN.sub(
                     "", sel
                 ).strip()
                 if not re.search(r"[> ]+", sel_without_attrs):
@@ -961,29 +1219,117 @@ class QSSParserPlugin(ABC):
         """
         Process a line of QSS text.
 
-        Args:
-            line: The line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
+        Parameters
+        ----------
+        line : str
+            The line to process.
+        state : ParserState
+            The current parser state.
+        variable_manager : VariableManager
+            Manager for resolving variables.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line was handled, else False.
         """
         pass
 
 
-class SelectorPlugin(QSSParserPlugin):
+class BaseQSSPlugin(QSSParserPlugin):
+    """Abstract base class for QSS parser plugins, providing common functionality."""
+
+    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
+        """
+        Initialize the base plugin.
+
+        Parameters
+        ----------
+        error_handler : ErrorHandlerProtocol
+            Callback for reporting errors.
+        """
+        self._error_handler = error_handler
+        self._logger: logging.Logger = logging.getLogger(__name__)
+
+    def _process_property_line(
+        self,
+        line: str,
+        state: ParserState,
+        property_processor: PropertyProcessorProtocol,
+        variable_manager: VariableManager,
+    ) -> bool:
+        """
+        Process a property line, handling buffering and splitting by semicolons.
+
+        Parameters
+        ----------
+        line : str
+            The line to process.
+        state : ParserState
+            The current parser state.
+        property_processor : PropertyProcessorProtocol
+            Processor for handling individual properties.
+        variable_manager : VariableManager
+            Manager for resolving variables.
+
+        Returns
+        -------
+        bool
+            True if the line was handled, else False.
+        """
+        line = line.strip()
+        if (
+            not state.in_rule
+            or not state.current_rules
+            or state.in_comment
+            or state.in_variables
+        ):
+            return False
+
+        if ";" in line:
+            full_line = (state.buffer + " " + line).strip() if state.buffer else line
+            state.buffer = ""
+            parts = full_line.split(";")
+            for part in parts[:-1]:
+                if part.strip():
+                    property_processor.process_property(
+                        part.strip() + ";",
+                        state.current_rules,
+                        variable_manager,
+                        state.current_line,
+                    )
+            if parts[-1].strip():
+                state.buffer = parts[-1].strip()
+            return True
+
+        state.buffer = (state.buffer + " " + line).strip()
+        return True
+
+
+class SelectorPlugin(BaseQSSPlugin):
     """Plugin for handling QSS selector lines."""
 
-    def __init__(self, parser: "QSSParser") -> None:
+    def __init__(
+        self,
+        property_processor: PropertyProcessorProtocol,
+        rule_handler: RuleHandlerProtocol,
+        error_handler: ErrorHandlerProtocol,
+    ) -> None:
         """
         Initialize the selector plugin.
 
-        Args:
-            parser: Reference to the QSSParser instance.
+        Parameters
+        ----------
+        property_processor : PropertyProcessorProtocol
+            Processor for handling properties.
+        rule_handler : RuleHandlerProtocol
+            Handler for adding or merging rules.
+        error_handler : ErrorHandlerProtocol
+            Callback for reporting errors.
         """
-        self._parser: "QSSParser" = parser
-        self._logger: logging.Logger = logging.getLogger(__name__)
+        super().__init__(error_handler)
+        self._property_processor = property_processor
+        self._rule_handler = rule_handler
 
     def process_line(
         self, line: str, state: ParserState, variable_manager: VariableManager
@@ -991,12 +1337,18 @@ class SelectorPlugin(QSSParserPlugin):
         """
         Process selector-related lines (e.g., starting/ending rules, complete rules).
 
-        Args:
-            line: The line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
+        Parameters
+        ----------
+        line : str
+            The line to process.
+        state : ParserState
+            The current parser state.
+        variable_manager : VariableManager
+            Manager for resolving variables.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line was handled, else False.
         """
         line = line.strip()
@@ -1038,7 +1390,7 @@ class SelectorPlugin(QSSParserPlugin):
         if line == "}" and state.in_rule:
             for rule in state.current_rules:
                 rule.original += "}\n"
-                self._merge_or_append_rule(rule, state)
+                self._rule_handler.handle_rule(rule)
             state.current_rules = []
             state.in_rule = False
             state.current_selectors = []
@@ -1053,13 +1405,20 @@ class SelectorPlugin(QSSParserPlugin):
         """
         Process a complete QSS rule in a single line.
 
-        Args:
-            line: The line containing the complete rule.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
+        Parameters
+        ----------
+        line : str
+            The line containing the complete rule.
+        state : ParserState
+            The current parser state.
+        variable_manager : VariableManager
+            Manager for resolving variables.
         """
         match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
         if not match:
+            self._error_handler.dispatch_error(
+                f"Error on line {state.current_line}: Malformed rule: {line}"
+            )
             return
         selector, properties = match.groups()
         normalized_selector = SelectorUtils.normalize_selector(selector.strip())
@@ -1076,101 +1435,40 @@ class SelectorPlugin(QSSParserPlugin):
             for part in prop_parts:
                 part = part.strip()
                 if part:
-                    self._process_property(part + ";", state, variable_manager)
+                    self._property_processor.process_property(
+                        part + ";",
+                        state.current_rules,
+                        variable_manager,
+                        state.current_line,
+                    )
         for rule in state.current_rules:
             rule.original += "}\n"
-            self._merge_or_append_rule(rule, state)
+            self._rule_handler.handle_rule(rule)
         state.current_rules = []
         state.current_selectors = []
         state.original_selector = None
 
-    def _process_property(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> None:
-        """
-        Process a property line and add it to the current rules.
 
-        Args:
-            line: The property line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
-        """
-        line = line.rstrip(";")
-        if not state.current_rules:
-            return
-        parts = line.split(":", 1)
-        if len(parts) == 2:
-            name, value = parts
-            if name.strip() and value.strip():
-                resolved_value, error = variable_manager.resolve_variable(value.strip())
-                if error:
-                    for handler in self._parser._event_handlers["error_found"]:
-                        handler(error)
-                normalized_line = f"{name.strip()}: {resolved_value};"
-                for rule in state.current_rules:
-                    rule.original += f"    {normalized_line}\n"
-                    rule.add_property(name.strip(), resolved_value)
-
-    def _merge_or_append_rule(self, rule: QSSRule, state: ParserState) -> None:
-        """
-        Merge a rule with existing rules or append it to the rule list, ensuring no duplicates.
-        When merging properties, retain the last value for duplicate property names (CSS standard).
-
-        Args:
-            rule: The rule to merge or append.
-            state: The current parser state.
-        """
-        self._logger.debug(f"Merging/appending rule: {rule.selector}")
-        for existing_rule in state.rules:
-            if existing_rule.selector == rule.selector:
-                prop_map = {p.name: p for p in existing_rule.properties}
-                for prop in rule.properties:
-                    prop_map[prop.name] = prop
-                existing_rule.properties = list(prop_map.values())
-                existing_rule.original = QSSFormatter.format_rule(
-                    existing_rule.selector, existing_rule.properties
-                )
-                for handler in self._parser._event_handlers["rule_added"]:
-                    handler(existing_rule)
-                return
-        state.rules.append(rule)
-        for handler in self._parser._event_handlers["rule_added"]:
-            handler(rule)
-        if (
-            ":" in rule.selector
-            and "::" not in rule.selector
-            and "," not in rule.selector
-        ):
-            base_rule = rule.clone_without_pseudo_elements()
-            for existing_rule in state.rules:
-                if existing_rule.selector == base_rule.selector:
-                    prop_map = {p.name: p for p in existing_rule.properties}
-                    for prop in base_rule.properties:
-                        prop_map[prop.name] = prop
-                    existing_rule.properties = list(prop_map.values())
-                    existing_rule.original = QSSFormatter.format_rule(
-                        existing_rule.selector, existing_rule.properties
-                    )
-                    for handler in self._parser._event_handlers["rule_added"]:
-                        handler(existing_rule)
-                    return
-            state.rules.append(base_rule)
-            for handler in self._parser._event_handlers["rule_added"]:
-                handler(base_rule)
-
-
-class PropertyPlugin(QSSParserPlugin):
+class PropertyPlugin(BaseQSSPlugin):
     """Plugin for handling QSS property lines."""
 
-    def __init__(self, parser: "QSSParser") -> None:
+    def __init__(
+        self,
+        property_processor: PropertyProcessorProtocol,
+        error_handler: ErrorHandlerProtocol,
+    ) -> None:
         """
         Initialize the property plugin.
 
-        Args:
-            parser: Reference to the QSSParser instance.
+        Parameters
+        ----------
+        property_processor : PropertyProcessorProtocol
+            Processor for handling properties.
+        error_handler : ErrorHandlerProtocol
+            Callback for reporting errors.
         """
-        self._parser: "QSSParser" = parser
-        self._logger: logging.Logger = logging.getLogger(__name__)
+        super().__init__(error_handler)
+        self._property_processor = property_processor
 
     def process_line(
         self, line: str, state: ParserState, variable_manager: VariableManager
@@ -1178,74 +1476,38 @@ class PropertyPlugin(QSSParserPlugin):
         """
         Process property-related lines within a rule.
 
-        Args:
-            line: The line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
+        Parameters
+        ----------
+        line : str
+            The line to process.
+        state : ParserState
+            The current parser state.
+        variable_manager : VariableManager
+            Manager for resolving variables.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line was handled, else False.
         """
-        line = line.strip()
-        if (
-            not state.in_rule
-            or not state.current_rules
-            or state.in_comment
-            or state.in_variables
-        ):
-            return False
-
-        if ";" in line:
-            full_line = (state.buffer + " " + line).strip() if state.buffer else line
-            state.buffer = ""
-            parts = full_line.split(";")
-            for part in parts[:-1]:
-                if part.strip():
-                    self._process_property(part.strip() + ";", state, variable_manager)
-            if parts[-1].strip():
-                state.buffer = parts[-1].strip()
-            return True
-
-        state.buffer = (state.buffer + " " + line).strip()
-        return True
-
-    def _process_property(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> None:
-        """
-        Process a property line and add it to the current rules.
-
-        Args:
-            line: The property line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
-        """
-        line = line.rstrip(";")
-        parts = line.split(":", 1)
-        if len(parts) == 2:
-            name, value = parts
-            if name.strip() and value.strip():
-                resolved_value, error = variable_manager.resolve_variable(value.strip())
-                if error:
-                    for handler in self._parser._event_handlers["error_found"]:
-                        handler(error)
-                normalized_line = f"{name.strip()}: {resolved_value};"
-                for rule in state.current_rules:
-                    rule.original += f"    {normalized_line}\n"
-                    rule.add_property(name.strip(), resolved_value)
+        return self._process_property_line(
+            line, state, self._property_processor, variable_manager
+        )
 
 
 class VariablePlugin(QSSParserPlugin):
     """Plugin for handling QSS @variables blocks."""
 
-    def __init__(self, parser: "QSSParser") -> None:
+    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
         """
         Initialize the variable plugin.
 
-        Args:
-            parser: Reference to the QSSParser instance.
+        Parameters
+        ----------
+        error_handler : ErrorHandlerProtocol
+            Callback for reporting errors during variable parsing.
         """
-        self._parser: "QSSParser" = parser
+        self._error_handler = error_handler
         self._logger: logging.Logger = logging.getLogger(__name__)
 
     def process_line(
@@ -1254,12 +1516,18 @@ class VariablePlugin(QSSParserPlugin):
         """
         Process variable-related lines (e.g., @variables blocks).
 
-        Args:
-            line: The line to process.
-            state: The current parser state.
-            variable_manager: Manager for resolving variables.
+        Parameters
+        ----------
+        line : str
+            The line to process.
+        state : ParserState
+            The current parser state.
+        variable_manager : VariableManager
+            Manager for resolving variables.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the line was handled, else False.
         """
         line = line.strip()
@@ -1276,10 +1544,11 @@ class VariablePlugin(QSSParserPlugin):
             return True
         if state.in_variables:
             if line == "}":
-                errors = variable_manager.parse_variables(state.variable_buffer)
+                errors = variable_manager.parse_variables(
+                    state.variable_buffer, state.current_line
+                )
                 for error in errors:
-                    for handler in self._parser._event_handlers["error_found"]:
-                        handler(error)
+                    self._error_handler.dispatch_error(error)
                 state.in_variables = False
                 state.variable_buffer = ""
                 return True
@@ -1294,12 +1563,20 @@ class VariablePlugin(QSSParserPlugin):
 class QSSParser:
     """Main QSS parser for parsing, validating, and applying styles to widgets."""
 
-    def __init__(self, plugins: Optional[List[QSSParserPlugin]] = None) -> None:
+    def __init__(
+        self,
+        property_processor: Optional[PropertyProcessorProtocol] = None,
+        plugins: Optional[List[QSSParserPlugin]] = None,
+    ) -> None:
         """
         Initialize the QSS parser.
 
-        Args:
-            plugins: List of plugins for custom parsing logic. If None, uses default plugins.
+        Parameters
+        ----------
+        property_processor : Optional[PropertyProcessorProtocol], optional
+            Custom processor for handling properties, by default None (uses DefaultPropertyProcessor).
+        plugins : Optional[List[QSSParserPlugin]], optional
+            List of plugins for custom parsing logic, by default None (uses default plugins).
         """
         self._state: ParserState = ParserState()
         self._validator: QSSValidator = QSSValidator()
@@ -1309,20 +1586,94 @@ class QSSParser:
             "rule_added": [],
             "error_found": [],
         }
+        self._rule_map: Dict[str, QSSRule] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)
+
+        self._error_handler: ErrorHandlerProtocol = self
+        self._property_processor: PropertyProcessorProtocol = (
+            property_processor if property_processor else DefaultPropertyProcessor(self)
+        )
+
         self._plugins: List[QSSParserPlugin] = plugins or [
-            VariablePlugin(self),
-            SelectorPlugin(self),
-            PropertyPlugin(self),
+            VariablePlugin(self._error_handler),
+            SelectorPlugin(self._property_processor, self, self._error_handler),
+            PropertyPlugin(self._property_processor, self._error_handler),
         ]
+
+    def dispatch_error(self, error: str) -> None:
+        """
+        Dispatch an error message to registered handlers.
+
+        Parameters
+        ----------
+        error : str
+            The error message to dispatch.
+        """
+        self._logger.warning(f"Error: {error}")
+        for handler in self._event_handlers["error_found"]:
+            handler(error)
+
+    def handle_rule(self, rule: QSSRule) -> None:
+        """
+        Handle a new or updated rule, merging with existing rules if necessary.
+
+        Parameters
+        ----------
+        rule : QSSRule
+            The rule to add or merge.
+        """
+        self._logger.debug(f"Handling rule: {rule.selector}")
+        existing_rule = self._rule_map.get(rule.selector)
+        if existing_rule:
+            prop_map = {p.name: p for p in existing_rule.properties}
+            for prop in rule.properties:
+                prop_map[prop.name] = prop
+            existing_rule.properties = list(prop_map.values())
+            existing_rule.original = QSSFormatter.format_rule(
+                existing_rule.selector, existing_rule.properties
+            )
+            for handler in self._event_handlers["rule_added"]:
+                handler(existing_rule)
+        else:
+            self._rule_map[rule.selector] = rule
+            self._state.rules.append(rule)
+            for handler in self._event_handlers["rule_added"]:
+                handler(rule)
+
+        if (
+            ":" in rule.selector
+            and "::" not in rule.selector
+            and "," not in rule.selector
+        ):
+            base_rule = rule.clone_without_pseudo_elements()
+            base_selector = base_rule.selector
+            existing_base = self._rule_map.get(base_selector)
+            if existing_base:
+                prop_map = {p.name: p for p in existing_base.properties}
+                for prop in base_rule.properties:
+                    prop_map[prop.name] = prop
+                existing_base.properties = list(prop_map.values())
+                existing_base.original = QSSFormatter.format_rule(
+                    base_selector, existing_base.properties
+                )
+                for handler in self._event_handlers["rule_added"]:
+                    handler(existing_base)
+            else:
+                self._rule_map[base_selector] = base_rule
+                self._state.rules.append(base_rule)
+                for handler in self._event_handlers["rule_added"]:
+                    handler(base_rule)
 
     def on(self, event: str, handler: Callable[[Any], None]) -> None:
         """
         Register an event handler for parser events.
 
-        Args:
-            event: The event to listen for ('rule_added', 'error_found').
-            handler: The function to call when the event occurs.
+        Parameters
+        ----------
+        event : str
+            The event to listen for ('rule_added', 'error_found').
+        handler : Callable[[Any], None]
+            The function to call when the event occurs.
         """
         if event in self._event_handlers:
             self._event_handlers[event].append(handler)
@@ -1332,38 +1683,51 @@ class QSSParser:
         """
         Parse QSS text into a list of QSSRule objects, resolving variables.
 
-        Args:
-            qss_text: The QSS text to parse, including @variables blocks.
+        Parameters
+        ----------
+        qss_text : str
+            The QSS text to parse, including @variables blocks.
+
+        Examples
+        --------
+        >>> parser = QSSParser()
+        >>> qss_text = "QPushButton { color: blue; }"
+        >>> parser.parse(qss_text)
         """
         self._reset()
         lines = qss_text.splitlines()
         for line in lines:
             self._process_line(line)
+            self._state.current_line += 1
         if self._state.buffer.strip():
-            for plugin in self._plugins:
-                if isinstance(plugin, PropertyPlugin):
-                    plugin._process_property(
-                        self._state.buffer, self._state, self._variable_manager
-                    )
-                    break
+            self._property_processor.process_property(
+                self._state.buffer,
+                self._state.current_rules,
+                self._variable_manager,
+                self._state.current_line,
+            )
         if self._state.variable_buffer.strip():
-            errors = self._variable_manager.parse_variables(self._state.variable_buffer)
+            errors = self._variable_manager.parse_variables(
+                self._state.variable_buffer, self._state.current_line
+            )
             for error in errors:
-                for handler in self._event_handlers["error_found"]:
-                    handler(error)
+                self.dispatch_error(error)
 
     def _reset(self) -> None:
         """Reset the parser's internal state."""
         self._state.reset()
         self._variable_manager = VariableManager()
+        self._rule_map.clear()
         self._logger.debug("Parser state reset")
 
     def _process_line(self, line: str) -> None:
         """
         Process a single line of QSS text using plugins.
 
-        Args:
-            line: The line to process.
+        Parameters
+        ----------
+        line : str
+            The line to process.
         """
         for plugin in self._plugins:
             if plugin.process_line(line, self._state, self._variable_manager):
@@ -1373,16 +1737,19 @@ class QSSParser:
         """
         Validate the format of QSS text.
 
-        Args:
-            qss_text: The QSS text to validate.
+        Parameters
+        ----------
+        qss_text : str
+            The QSS text to validate.
 
-        Returns:
+        Returns
+        -------
+        List[str]
             List of error messages.
         """
         errors = self._validator.check_format(qss_text)
         for error in errors:
-            for handler in self._event_handlers["error_found"]:
-                handler(error)
+            self.dispatch_error(error)
         return errors
 
     def get_styles_for(
@@ -1395,13 +1762,20 @@ class QSSParser:
         """
         Retrieve QSS styles for a given widget.
 
-        Args:
-            widget: The widget to retrieve styles for.
-            fallback_class: Fallback class to use if no styles are found.
-            additional_selectors: Additional selectors to include.
-            include_class_if_object_name: Whether to include class styles if an object name is present.
+        Parameters
+        ----------
+        widget : WidgetProtocol
+            The widget to retrieve styles for.
+        fallback_class : Optional[str], optional
+            Fallback class to use if no styles are found, by default None.
+        additional_selectors : Optional[List[str]], optional
+            Additional selectors to include, by default None.
+        include_class_if_object_name : bool, optional
+            Whether to include class styles if an object name is present, by default False.
 
-        Returns:
+        Returns
+        -------
+        str
             The concatenated QSS styles for the widget.
         """
         return self._style_selector.get_styles_for(
@@ -1417,7 +1791,14 @@ class QSSParser:
         return self.to_string()
 
     def to_string(self) -> str:
-        """Return a string representation of the parser in standard QSS format."""
+        """
+        Return a string representation of the parser in standard QSS format.
+
+        Returns
+        -------
+        str
+            The formatted QSS string.
+        """
         return "\n".join(
             QSSFormatter.format_rule(rule.selector, rule.properties)
             for rule in self._state.rules
