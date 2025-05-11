@@ -245,24 +245,19 @@ class VariableManager:
         """
         Parse a @variables block and store the variables.
 
-        Parameters
-        ----------
-        block : str
-            The content of the @variables block (e.g., '--primary-color: #ffffff;').
-        start_line : int, optional
-            Starting line number for error reporting, by default 1.
+        Args:
+            block: The content of the @variables block (e.g., '--primary-color: #ffffff;').
+            start_line: Starting line number for error reporting, by default 1.
+            on_variable_defined: Optional callback to invoke when a variable is defined.
 
-        Returns
-        -------
-        List[str]
-            List of error messages for invalid variable declarations.
+        Returns:
+            List[str]: List of error messages for invalid variable declarations.
 
-        Examples
-        --------
-        >>> vm = VariableManager()
-        >>> errors = vm.parse_variables('--primary-color: #ffffff; --invalid:;')
-        >>> print(errors)
-        ['Malformed variable declaration on line 2: --invalid:']
+        Examples:
+            >>> vm = VariableManager()
+            >>> errors = vm.parse_variables('--primary-color: #ffffff; --invalid:;')
+            >>> print(errors)
+            ['Malformed variable declaration on line 2: --invalid:']
         """
         errors: List[str] = []
         lines = block.split(";")
@@ -291,35 +286,32 @@ class VariableManager:
         """
         Resolve var(--name) references in a property value recursively.
 
-        Parameters
-        ----------
-        value : str
-            The property value containing var(--name) references.
+        Args:
+            value: The property value containing var(--name) references.
 
-        Returns
-        -------
-        Tuple[str, Optional[str]]
-            A tuple of the resolved value and an error message if a variable is undefined or a loop is detected.
+        Returns:
+            Tuple[str, Optional[str]]: A tuple of the resolved value and an error message
+            if a variable is undefined or a circular reference is detected.
 
-        Examples
-        --------
-        >>> vm = VariableManager()
-        >>> vm.parse_variables('--color: #ff0000;')
-        >>> resolved, error = vm.resolve_variable('var(--color)')
-        >>> print(resolved, error)
-        '#ff0000' None
+        Examples:
+            >>> vm = VariableManager()
+            >>> vm.parse_variables('--color: #ff0000;')
+            >>> resolved, error = vm.resolve_variable('var(--color)')
+            >>> print(resolved, error)
+            '#ff0000' None
         """
         visited: Set[str] = set()
+        errors: List[str] = []
 
         def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             if var_name in visited:
-                self._logger.warning(
-                    f"Circular variable reference detected: {var_name}"
-                )
-                return match.group(0)
+                error_msg = f"Circular variable reference detected: {var_name}"
+                self._logger.warning(error_msg)
+                errors.append(error_msg)
+                return match.group(0)  # Return original to avoid infinite loop
             if var_name not in self._variables:
-                return match.group(0)
+                return match.group(0)  # Return original for undefined variable
             visited.add(var_name)
             resolved_value = self._variables[var_name]
             nested_value = re.sub(
@@ -334,11 +326,11 @@ class VariableManager:
             for match in re.finditer(Constants.VARIABLE_PATTERN, value)
             if match.group(1) not in self._variables and match.group(1) not in visited
         ]
-        error = (
-            f"Undefined variables: {', '.join(undefined_vars)}"
-            if undefined_vars
-            else None
-        )
+        error = None
+        if errors:
+            error = errors[0]
+        elif undefined_vars:
+            error = f"Undefined variables: {', '.join(undefined_vars)}"
         return resolved_value, error
 
 
@@ -464,7 +456,6 @@ class SelectorUtils:
 
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         if len(selectors) > 1:
-            # Check for duplicate selectors
             seen_selectors: Set[str] = set()
             for sel in selectors:
                 if sel in seen_selectors:
@@ -472,7 +463,6 @@ class SelectorUtils:
                         f"Error on line {line_num}: Duplicate selector '{sel}' in comma-separated list"
                     )
                 seen_selectors.add(sel)
-            # Pseudo-states in comma-separated selectors are not supported
             for sel in selectors:
                 if ":" in sel and not sel.endswith(":"):
                     errors.append(
@@ -482,10 +472,8 @@ class SelectorUtils:
                     return errors
 
         for sel in selectors:
-            # Validate attribute selectors
             attributes = SelectorUtils.extract_attributes(sel)
             for attr in attributes:
-                # Check for malformed attribute selectors (e.g., [attr=])
                 if not re.match(
                     r'\[\w+(?:(?:~|=|\|=|\^=|\$=|\*=)(?:"[^"]*"|[^\s"\]]*))?[^[]*\]',
                     attr,
@@ -494,7 +482,6 @@ class SelectorUtils:
                         f"Error on line {line_num}: Invalid selector: '{sel}'. "
                         f"Malformed attribute selector '{attr}'"
                     )
-                # Additional check for empty or malformed attribute values
                 if re.match(r"\[\w+(?:~|=|\|=|\^=|\$=|\*=)\]", attr):
                     errors.append(
                         f"Error on line {line_num}: Invalid selector: '{sel}'. "
@@ -839,7 +826,6 @@ class QSSSyntaxChecker:
                             f"Error on line {line_num}: Property missing value: {part}"
                         )
                     else:
-                        # Validate property name
                         prop_name = part.split(":", 1)[0].strip()
                         if not self._is_valid_property_name(prop_name):
                             errors.append(
@@ -869,7 +855,6 @@ class QSSSyntaxChecker:
         Returns:
             bool: True if the property name is valid, else False.
         """
-        # Property names must start with a letter, followed by letters, numbers, or hyphens
         return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
 
     def _is_potential_selector(self, line: str) -> bool:

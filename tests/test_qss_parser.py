@@ -941,6 +941,95 @@ class TestQSSParserParsing(unittest.TestCase):
             self.assertEqual(rule.properties[0].name, "color")
             self.assertEqual(rule.properties[0].value, "blue")
 
+    def test_parse_empty_property_value(self) -> None:
+        """
+        Test parsing QSS with empty property values.
+        """
+        qss: str = """
+        QPushButton {
+            color: ;
+            background: white;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(len(rule.properties), 1, "Should skip empty property")
+        self.assertEqual(rule.properties[0].name, "background")
+        self.assertEqual(rule.properties[0].value, "white")
+
+    def test_parse_circular_variable_references(self) -> None:
+        """
+        Test parsing QSS with circular variable references.
+        """
+        errors = []
+
+        def error_handler(error: str) -> None:
+            errors.append(error)
+
+        qss: str = """
+        @variables {
+            --a: var(--b);
+            --b: var(--a);
+            --c: #ffffff;
+            --d: var(--c);
+        }
+        QPushButton {
+            color: var(--a);
+            background: var(--c);
+            border: var(--d);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.on("error_found", error_handler)
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        self.assertEqual(len(errors), 1, "Should report circular reference")
+        self.assertIn("Circular variable reference detected", errors[0])
+
+    def test_parse_multiple_variables_blocks(self) -> None:
+        """
+        Test parsing QSS with multiple @variables blocks.
+        """
+        qss: str = """
+        @variables {
+            --color1: red;
+        }
+        @variables {
+            --color2: blue;
+        }
+        QPushButton {
+            color: var(--color1);
+            background: var(--color2);
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(len(rule.properties), 2)
+        self.assertEqual(rule.properties[0].value, "red")
+        self.assertEqual(rule.properties[1].value, "blue")
+
+    def test_parse_complex_hierarchical_selector(self) -> None:
+        """
+        Test parsing QSS with complex hierarchical selectors.
+        """
+        qss: str = """
+        QWidget > QFrame > QPushButton:hover {
+            border: 1px solid green;
+        }
+        """
+        parser: QSSParser = QSSParser()
+        parser.parse(qss)
+        self.assertEqual(len(parser._state.rules), 1, "Should parse one rule")
+        rule: QSSRule = parser._state.rules[0]
+        self.assertEqual(rule.selector, "QWidget > QFrame > QPushButton:hover")
+        self.assertEqual(len(rule.properties), 1)
+        self.assertEqual(rule.properties[0].name, "border")
+        self.assertEqual(rule.properties[0].value, "1px solid green")
+
 
 class TestQSSParserStyleSelection(unittest.TestCase):
     def setUp(self) -> None:
