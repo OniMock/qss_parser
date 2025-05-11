@@ -29,7 +29,9 @@ from typing import (
 class Constants:
     """Centralized constants for regex patterns and other static values."""
 
-    ATTRIBUTE_PATTERN: Final[str] = r'\[\w+(?:~|=|\|=|\^=|\$=|\*=)?(?:".*?"|[^\]]*)\]'
+    ATTRIBUTE_PATTERN: Final[str] = (
+        r'\[\w+(?:(?:~|=|\|=|\^=|\$=|\*=)(?:"[^"]*"|[^\s"\]]*))?[^[]*\]'
+    )
     COMPILED_ATTRIBUTE_PATTERN: Final[Pattern[str]] = re.compile(ATTRIBUTE_PATTERN)
     VARIABLE_PATTERN: Final[str] = r"var\((--[\w-]+)\)"
     COMPLETE_RULE_PATTERN: Final[str] = r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$"
@@ -348,15 +350,11 @@ class SelectorUtils:
         """
         Check if the line is a complete QSS rule (selector + { + properties + }).
 
-        Parameters
-        ----------
-        line : str
-            The line to check.
+        Args:
+            line: The line to check.
 
-        Returns
-        -------
-        bool
-            True if the line is a complete QSS rule, else False.
+        Returns:
+            bool: True if the line is a complete QSS rule, else False.
         """
         return bool(re.match(Constants.COMPLETE_RULE_PATTERN, line))
 
@@ -365,15 +363,11 @@ class SelectorUtils:
         """
         Extract attribute selectors from a QSS selector.
 
-        Parameters
-        ----------
-        selector : str
-            The selector to parse (e.g., 'QPushButton[data-value="complex"]').
+        Args:
+            selector: The selector to parse (e.g., 'QPushButton[data-value="complex"]').
 
-        Returns
-        -------
-        List[str]
-            List of attribute selectors (e.g., ['[data-value="complex"]']).
+        Returns:
+            List[str]: List of attribute selectors (e.g., ['[data-value="complex"]']).
         """
         return Constants.COMPILED_ATTRIBUTE_PATTERN.findall(selector)
 
@@ -383,20 +377,15 @@ class SelectorUtils:
         Normalize a selector by removing extra spaces around combinators and between parts,
         while preserving spaces within attribute selectors.
 
-        Parameters
-        ----------
-        selector : str
-            The selector to normalize.
+        Args:
+            selector: The selector to normalize.
 
-        Returns
-        -------
-        str
-            The normalized selector.
+        Returns:
+            str: The normalized selector.
 
-        Examples
-        --------
-        >>> SelectorUtils.normalize_selector('QPushButton   >   #myButton')
-        'QPushButton > #myButton'
+        Examples:
+            >>> SelectorUtils.normalize_selector('QPushButton   >   #myButton')
+            'QPushButton > #myButton'
         """
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         normalized_selectors = []
@@ -424,20 +413,16 @@ class SelectorUtils:
         """
         Parse a selector into object name, class name, attributes, and pseudo-states.
 
-        Parameters
-        ----------
-        selector : str
-            The selector to parse.
+        Args:
+            selector: The selector to parse.
 
-        Returns
-        -------
-        Tuple[Optional[str], Optional[str], List[str], List[str]]
-            A tuple of (object_name, class_name, attributes, pseudo_states).
+        Returns:
+            Tuple[Optional[str], Optional[str], List[str], List[str]]: A tuple of
+            (object_name, class_name, attributes, pseudo_states).
 
-        Examples
-        --------
-        >>> SelectorUtils.parse_selector('#myButton:hover')
-        ('myButton', None, [], ['hover'])
+        Examples:
+            >>> SelectorUtils.parse_selector('#myButton:hover')
+            ('myButton', None, [], ['hover'])
         """
         object_name: Optional[str] = None
         class_name: Optional[str] = None
@@ -464,25 +449,30 @@ class SelectorUtils:
     @staticmethod
     def validate_selector_syntax(selector: str, line_num: int) -> List[str]:
         """
-        Validate the syntax of a QSS selector, checking for spacing issues.
+        Validate the syntax of a QSS selector, checking for spacing issues, malformed attributes,
+        and duplicate selectors.
 
-        Parameters
-        ----------
-        selector : str
-            The selector to validate.
-        line_num : int
-            The line number for error reporting.
+        Args:
+            selector: The selector to validate.
+            line_num: The line number for error reporting.
 
-        Returns
-        -------
-        List[str]
-            List of error messages for invalid selector syntax.
+        Returns:
+            List[str]: List of error messages for invalid selector syntax.
         """
         errors: List[str] = []
         selector = selector.strip()
 
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         if len(selectors) > 1:
+            # Check for duplicate selectors
+            seen_selectors: Set[str] = set()
+            for sel in selectors:
+                if sel in seen_selectors:
+                    errors.append(
+                        f"Error on line {line_num}: Duplicate selector '{sel}' in comma-separated list"
+                    )
+                seen_selectors.add(sel)
+            # Pseudo-states in comma-separated selectors are not supported
             for sel in selectors:
                 if ":" in sel and not sel.endswith(":"):
                     errors.append(
@@ -492,6 +482,25 @@ class SelectorUtils:
                     return errors
 
         for sel in selectors:
+            # Validate attribute selectors
+            attributes = SelectorUtils.extract_attributes(sel)
+            for attr in attributes:
+                # Check for malformed attribute selectors (e.g., [attr=])
+                if not re.match(
+                    r'\[\w+(?:(?:~|=|\|=|\^=|\$=|\*=)(?:"[^"]*"|[^\s"\]]*))?[^[]*\]',
+                    attr,
+                ):
+                    errors.append(
+                        f"Error on line {line_num}: Invalid selector: '{sel}'. "
+                        f"Malformed attribute selector '{attr}'"
+                    )
+                # Additional check for empty or malformed attribute values
+                if re.match(r"\[\w+(?:~|=|\|=|\^=|\$=|\*=)\]", attr):
+                    errors.append(
+                        f"Error on line {line_num}: Invalid selector: '{sel}'. "
+                        f"Malformed attribute selector '{attr}'"
+                    )
+
             matches = re.finditer(Constants.PSEUDO_PATTERN, sel)
             for match in matches:
                 prefix, colon, pseudo = match.groups()
@@ -643,7 +652,7 @@ class ParserState:
 
 
 class QSSSyntaxChecker:
-    """Validates QSS syntax for correctness, including variables."""
+    """Validates QSS syntax for correctness, including variables, selectors, and properties."""
 
     def __init__(self) -> None:
         """Initialize the QSS syntax checker."""
@@ -654,15 +663,11 @@ class QSSSyntaxChecker:
         """
         Validate the format of QSS text for syntax errors.
 
-        Parameters
-        ----------
-        qss_text : str
-            The QSS text to validate.
+        Args:
+            qss_text: The QSS text to validate.
 
-        Returns
-        -------
-        List[str]
-            List of error messages in the format: "Error on line {num}: {description}: {content}".
+        Returns:
+            List[str]: List of error messages in the format: "Error on line {num}: {description}: {content}".
         """
         errors: List[str] = []
         lines = qss_text.splitlines()
@@ -801,17 +806,12 @@ class QSSSyntaxChecker:
         """
         Validate a complete QSS rule in a single line.
 
-        Parameters
-        ----------
-        line : str
-            The line containing the complete rule.
-        line_num : int
-            The line number.
+        Args:
+            line: The line containing the complete rule.
+            line_num: The line number.
 
-        Returns
-        -------
-        List[str]
-            List of error messages for the rule.
+        Returns:
+            List[str]: List of error messages for the rule.
         """
         errors: List[str] = []
         match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
@@ -838,27 +838,49 @@ class QSSSyntaxChecker:
                         errors.append(
                             f"Error on line {line_num}: Property missing value: {part}"
                         )
+                    else:
+                        # Validate property name
+                        prop_name = part.split(":", 1)[0].strip()
+                        if not self._is_valid_property_name(prop_name):
+                            errors.append(
+                                f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                            )
             last_part = prop_parts[-1].strip()
             if last_part and not last_part.endswith(";"):
                 errors.append(
                     f"Error on line {line_num}: Property missing ';': {last_part}"
                 )
+                if ":" in last_part and not last_part.endswith(":"):
+                    prop_name = last_part.split(":", 1)[0].strip()
+                    if not self._is_valid_property_name(prop_name):
+                        errors.append(
+                            f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                        )
 
         return errors
+
+    def _is_valid_property_name(self, name: str) -> bool:
+        """
+        Check if a property name is valid according to QSS conventions.
+
+        Args:
+            name: The property name to validate.
+
+        Returns:
+            bool: True if the property name is valid, else False.
+        """
+        # Property names must start with a letter, followed by letters, numbers, or hyphens
+        return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
 
     def _is_potential_selector(self, line: str) -> bool:
         """
         Check if the line could be a selector (but not a complete rule or property).
 
-        Parameters
-        ----------
-        line : str
-            The line to check.
+        Args:
+            line: The line to check.
 
-        Returns
-        -------
-        bool
-            True if the line looks like a selector, else False.
+        Returns:
+            bool: True if the line looks like a selector, else False.
         """
         return (
             not SelectorUtils.is_complete_rule(line)
@@ -875,17 +897,12 @@ class QSSSyntaxChecker:
         """
         Check if the line starts a comment block.
 
-        Parameters
-        ----------
-        line : str
-            The line to check.
-        in_comment : bool
-            Whether currently inside a comment block.
+        Args:
+            line: The line to check.
+            in_comment: Whether currently inside a comment block.
 
-        Returns
-        -------
-        bool
-            True if the line starts a new comment block, else False.
+        Returns:
+            bool: True if the line starts a new comment block, else False.
         """
         return line.startswith("/*") and not in_comment
 
@@ -893,17 +910,12 @@ class QSSSyntaxChecker:
         """
         Validate a line containing a selector and an opening brace.
 
-        Parameters
-        ----------
-        line : str
-            The line to validate.
-        line_num : int
-            The line number.
+        Args:
+            line: The line to validate.
+            line_num: The line number.
 
-        Returns
-        -------
-        Tuple[List[str], str]
-            A tuple of error messages and the extracted selector.
+        Returns:
+            Tuple[List[str], str]: A tuple of error messages and the extracted selector.
         """
         errors: List[str] = []
         selector = line[:-1].strip()
@@ -919,15 +931,11 @@ class QSSSyntaxChecker:
         """
         Check if the line contains a property (e.g., 'color: blue;').
 
-        Parameters
-        ----------
-        line : str
-            The line to check.
+        Args:
+            line: The line to check.
 
-        Returns
-        -------
-        bool
-            True if the line is a valid property line, else False.
+        Returns:
+            bool: True if the line is a valid property line, else False.
         """
         return ":" in line and ";" in line and not line.startswith("@variables")
 
@@ -935,21 +943,15 @@ class QSSSyntaxChecker:
         self, line: str, buffer: str, line_num: int
     ) -> Tuple[str, List[str]]:
         """
-        Process a property line, accumulating in the buffer and checking for semicolons.
+        Process a property line, accumulating in the buffer and checking for semicolons and property names.
 
-        Parameters
-        ----------
-        line : str
-            The current line to process.
-        buffer : str
-            The buffer of accumulated properties.
-        line_num : int
-            The current line number.
+        Args:
+            line: The current line to process.
+            buffer: The buffer of accumulated properties.
+            line_num: The current line number.
 
-        Returns
-        -------
-        Tuple[str, List[str]]
-            Updated buffer and list of error messages.
+        Returns:
+            Tuple[str, List[str]]: Updated buffer and list of error messages.
         """
         errors: List[str] = []
         if ";" in line and buffer.strip():
@@ -969,6 +971,12 @@ class QSSSyntaxChecker:
                         errors.append(
                             f"Error on line {line_num}: Malformed property: {part.strip()}"
                         )
+                    else:
+                        prop_name = part.split(":", 1)[0].strip()
+                        if not self._is_valid_property_name(prop_name):
+                            errors.append(
+                                f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                            )
             buffer = parts[-1].strip() if parts[-1].strip() else ""
         else:
             buffer = (buffer + " " + line).strip()
@@ -976,23 +984,28 @@ class QSSSyntaxChecker:
 
     def _validate_pending_properties(self, buffer: str, line_num: int) -> List[str]:
         """
-        Validate pending properties in the buffer for missing semicolons.
+        Validate pending properties in the buffer for missing semicolons and invalid property names.
 
-        Parameters
-        ----------
-        buffer : str
-            The buffer containing pending properties.
-        line_num : int
-            The line number for errors.
+        Args:
+            buffer: The buffer containing pending properties.
+            line_num: The line number for errors.
 
-        Returns
-        -------
-        List[str]
-            List of error messages for invalid properties.
+        Returns:
+            List[str]: List of error messages for invalid properties.
         """
+        errors: List[str] = []
         if buffer.strip() and not buffer.endswith(";"):
-            return [f"Error on line {line_num}: Property missing ';': {buffer.strip()}"]
-        return []
+            errors.append(
+                f"Error on line {line_num}: Property missing ';': {buffer.strip()}"
+            )
+            prop_name = (
+                buffer.split(":", 1)[0].strip() if ":" in buffer else buffer.strip()
+            )
+            if not self._is_valid_property_name(prop_name):
+                errors.append(
+                    f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                )
+        return errors
 
     def _finalize_validation(
         self, open_braces: int, current_selector: str, buffer: str, last_line_num: int
@@ -1000,21 +1013,14 @@ class QSSSyntaxChecker:
         """
         Validate final conditions, such as unclosed braces or pending properties.
 
-        Parameters
-        ----------
-        open_braces : int
-            Number of open braces.
-        current_selector : str
-            The current selector being processed.
-        buffer : str
-            The buffer of pending properties.
-        last_line_num : int
-            The last line number processed.
+        Args:
+            open_braces: Number of open braces.
+            current_selector: The current selector being processed.
+            buffer: The buffer of pending properties.
+            last_line_num: The last line number processed.
 
-        Returns
-        -------
-        List[str]
-            List of error messages for final validation issues.
+        Returns:
+            List[str]: List of error messages for final validation issues.
         """
         errors: List[str] = []
         if open_braces > 0 and current_selector:

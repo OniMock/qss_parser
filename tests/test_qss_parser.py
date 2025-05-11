@@ -536,6 +536,70 @@ class TestQSSParserValidation(unittest.TestCase):
         errors: List[str] = self.validator.check_format(qss)
         self.assertEqual(errors, [], "Without spacing around commas should be valid")
 
+    def test_check_format_escaped_characters(self) -> None:
+        """
+        Test QSS with escaped characters in selectors and properties.
+        """
+        qss: str = """
+        QPushButton\#special {
+            color: blue;
+        }
+        QPushButton {
+            content: "Line\\nBreak";
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        self.assertEqual(
+            errors, [], "Valid escaped characters should not generate errors"
+        )
+
+    def test_check_format_invalid_selector_syntax(self) -> None:
+        """
+        Test QSS with invalid selector syntax (e.g., malformed pseudo-state or attribute).
+        """
+        qss: str = """
+        QPushButton[attr=] {
+            background: red;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Invalid selector: 'QPushButton[attr=]'. Malformed attribute selector '[attr=]'"
+        ]
+        self.assertEqual(errors, expected, "Should report invalid selector syntax")
+
+    def test_check_format_duplicate_selectors(self) -> None:
+        """
+        Test QSS with duplicate selectors in a single rule.
+        """
+        qss: str = """
+        QPushButton, QPushButton, QFrame {
+            color: blue;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 2: Duplicate selector 'QPushButton' in comma-separated list"
+        ]
+        self.assertEqual(errors, expected, "Should report duplicate selectors")
+
+    def test_check_format_invalid_property_name(self) -> None:
+        """
+        Test QSS with invalid property names.
+        """
+        qss: str = """
+        QPushButton {
+            123color: blue;
+            -color: red;
+        }
+        """
+        errors: List[str] = self.validator.check_format(qss)
+        expected: List[str] = [
+            "Error on line 3: Invalid property name: '123color'",
+            "Error on line 4: Invalid property name: '-color'",
+        ]
+        self.assertEqual(errors, expected, "Should report invalid property names")
+
 
 class TestQSSParserParsing(unittest.TestCase):
     def setUp(self) -> None:
