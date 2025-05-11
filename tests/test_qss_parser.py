@@ -2110,6 +2110,52 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
+    def test_get_styles_for_no_matching_selectors(self) -> None:
+        """
+        Test style retrieval when no selectors match the widget.
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "nonExistent"
+        widget.metaObject.return_value.className.return_value = "NonExistentClass"
+        stylesheet: str = self.parser.get_styles_for(widget)
+        self.assertEqual(
+            stylesheet, "", "Should return empty stylesheet for no matches"
+        )
+
+    def test_get_styles_for_multiple_pseudo_states(self) -> None:
+        """
+        Test style retrieval with multiple pseudo-states.
+        """
+        parser: QSSParser = QSSParser()
+        qss: str = """
+        QPushButton:hover:focus:disabled {
+            color: gray;
+        }
+        """
+        parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = parser.get_styles_for(widget)
+        expected: str = """QPushButton:hover:focus:disabled {
+    color: gray;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_for_invalid_fallback_class(self) -> None:
+        """
+        Test style retrieval with an invalid fallback class.
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "nonExistent"
+        widget.metaObject.return_value.className.return_value = "NonExistentClass"
+        stylesheet: str = self.parser.get_styles_for(
+            widget, fallback_class="InvalidClass"
+        )
+        self.assertEqual(
+            stylesheet, "", "Should return empty stylesheet for invalid fallback class"
+        )
+
 
 class TestQSSParserEvents(unittest.TestCase):
     def setUp(self) -> None:
