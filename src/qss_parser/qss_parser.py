@@ -234,7 +234,12 @@ class VariableManager:
         self._variables: Dict[str, str] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)
 
-    def parse_variables(self, block: str, start_line: int = 1) -> List[str]:
+    def parse_variables(
+        self,
+        block: str,
+        start_line: int = 1,
+        on_variable_defined: Optional[Callable[[str, str], None]] = None,
+    ) -> List[str]:
         """
         Parse a @variables block and store the variables.
 
@@ -273,7 +278,11 @@ class VariableManager:
                 errors.append(f"Malformed variable declaration on line {i}: {line}")
                 continue
             name, value = parts
-            self._variables[name.strip()] = value.strip()
+            name = name.strip()
+            value = value.strip()
+            self._variables[name] = value
+            if on_variable_defined:
+                on_variable_defined(name, value)  # Trigger callback for valid variable
         return errors
 
     def resolve_variable(self, value: str) -> Tuple[str, Optional[str]]:
@@ -1544,8 +1553,18 @@ class VariablePlugin(QSSParserPlugin):
             return True
         if state.in_variables:
             if line == "}":
+
+                def dispatch_variable_defined(name: str, value: str) -> None:
+                    if isinstance(self._error_handler, QSSParser):
+                        for handler in self._error_handler._event_handlers.get(
+                            "variable_defined", []
+                        ):
+                            handler(name, value)
+
                 errors = variable_manager.parse_variables(
-                    state.variable_buffer, state.current_line
+                    state.variable_buffer,
+                    state.current_line,
+                    on_variable_defined=dispatch_variable_defined,
                 )
                 for error in errors:
                     self._error_handler.dispatch_error(error)
@@ -1585,6 +1604,7 @@ class QSSParser:
         self._event_handlers: Dict[str, List[Callable[[Any], None]]] = {
             "rule_added": [],
             "error_found": [],
+            "variable_defined": [],
         }
         self._rule_map: Dict[str, QSSRule] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)

@@ -2093,12 +2093,30 @@ class TestQSSParserEvents(unittest.TestCase):
             selectors, {"QPushButton", "QFrame"}, "Should capture all selectors"
         )
 
+    def test_event_variable_defined(self) -> None:
+        """
+        Test the variable_defined event.
+        """
+        variables_defined: List[tuple[str, str]] = []
+        self.parser.on(
+            "variable_defined",
+            lambda name, value: variables_defined.append((name, value)),
+        )
+        qss: str = """
+        @variables {
+            --color: blue;
+        }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(variables_defined), 1, "Should trigger variable_defined")
+        self.assertEqual(variables_defined[0], ("--color", "blue"))
+
 
 class TestQSSParserToString(unittest.TestCase):
     """Test cases for the to_string() method of QSSParser."""
 
     def setUp(self) -> None:
-        """Set up a new QSSParser instance for each test."""
+        """Set up a new instance for each test."""
         self.parser = QSSParser()
         self.validator = QSSValidator()
 
