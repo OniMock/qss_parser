@@ -2125,6 +2125,20 @@ class TestQSSParserEvents(unittest.TestCase):
         self.parser.parse(self.qss)
         self.assertTrue(parse_completed, "Should trigger parse_completed")
 
+    def test_event_invalid_rule_skipped(self) -> None:
+        """
+        Test the invalid_rule_skipped event.
+        """
+        invalid_rules: List[str] = []
+        self.parser.on("invalid_rule_skipped", lambda rule: invalid_rules.append(rule))
+        qss: str = """
+        QPushButton {
+            color: blue
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(invalid_rules), 1, "Should trigger invalid_rule_skipped")
+        self.assertIn("color: blue", invalid_rules[0])
+
 
 class TestQSSParserToString(unittest.TestCase):
     """Test cases for the to_string() method of QSSParser."""

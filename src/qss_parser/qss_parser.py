@@ -1606,6 +1606,7 @@ class QSSParser:
             "error_found": [],
             "variable_defined": [],
             "parse_completed": [],
+            "invalid_rule_skipped": [],
         }
         self._rule_map: Dict[str, QSSRule] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)
@@ -1733,6 +1734,18 @@ class QSSParser:
             )
             for error in errors:
                 self.dispatch_error(error)
+        if self._state.in_rule and self._state.current_rules:
+            invalid_content = (
+                f"{self._state.original_selector} {{\n"
+                f"{self._state.buffer.strip()}\n"
+            )
+            self._logger.warning(f"Skipping incomplete rule: {invalid_content}")
+            for handler in self._event_handlers["invalid_rule_skipped"]:
+                handler(invalid_content)
+            self._state.current_rules = []
+            self._state.in_rule = False
+            self._state.current_selectors = []
+            self._state.original_selector = None
         for handler in self._event_handlers["parse_completed"]:
             handler()
         self._logger.debug("Parsing completed and parse_completed event dispatched")
