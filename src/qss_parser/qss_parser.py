@@ -282,7 +282,7 @@ class VariableManager:
             value = value.strip()
             self._variables[name] = value
             if on_variable_defined:
-                on_variable_defined(name, value)  # Trigger callback for valid variable
+                on_variable_defined(name, value)
         return errors
 
     def resolve_variable(self, value: str) -> Tuple[str, Optional[str]]:
@@ -1605,6 +1605,7 @@ class QSSParser:
             "rule_added": [],
             "error_found": [],
             "variable_defined": [],
+            "parse_completed": [],
         }
         self._rule_map: Dict[str, QSSRule] = {}
         self._logger: logging.Logger = logging.getLogger(__name__)
@@ -1732,6 +1733,9 @@ class QSSParser:
             )
             for error in errors:
                 self.dispatch_error(error)
+        for handler in self._event_handlers["parse_completed"]:
+            handler()
+        self._logger.debug("Parsing completed and parse_completed event dispatched")
 
     def _reset(self) -> None:
         """Reset the parser's internal state."""

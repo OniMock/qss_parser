@@ -2111,6 +2111,20 @@ class TestQSSParserEvents(unittest.TestCase):
         self.assertEqual(len(variables_defined), 1, "Should trigger variable_defined")
         self.assertEqual(variables_defined[0], ("--color", "blue"))
 
+    def test_event_parse_completed(self) -> None:
+        """
+        Test the parse_completed event.
+        """
+        parse_completed: bool = False
+
+        def on_parse_completed() -> None:
+            nonlocal parse_completed
+            parse_completed = True
+
+        self.parser.on("parse_completed", on_parse_completed)
+        self.parser.parse(self.qss)
+        self.assertTrue(parse_completed, "Should trigger parse_completed")
+
 
 class TestQSSParserToString(unittest.TestCase):
     """Test cases for the to_string() method of QSSParser."""
