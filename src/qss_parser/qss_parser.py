@@ -1,16 +1,16 @@
 """
-QSS Parser for parsing, validating, and applying Qt Style Sheets (QSS).
+QSS Parser for parsing and applying Qt Style Sheets (QSS).
 
 This module provides a robust parser for QSS, supporting variables, attribute selectors,
-pseudo-states, and hierarchical selectors. It includes validation, style selection, and
-an extensible plugin system for custom parsing logic.
+pseudo-states, and hierarchical selectors. It includes style selection and an extensible
+plugin system for custom parsing logic. Validation is performed during parsing, with errors
+reported via the 'error_found' event.
 """
 
 import logging
 import re
 from abc import ABC, abstractmethod
 from typing import (
-    Any,
     Callable,
     Dict,
     Final,
@@ -252,12 +252,6 @@ class VariableManager:
 
         Returns:
             List[str]: List of error messages for invalid variable declarations.
-
-        Examples:
-            >>> vm = VariableManager()
-            >>> errors = vm.parse_variables('--primary-color: #ffffff; --invalid:;')
-            >>> print(errors)
-            ['Malformed variable declaration on line 2: --invalid:']
         """
         errors: List[str] = []
         lines = block.split(";")
@@ -292,13 +286,6 @@ class VariableManager:
         Returns:
             Tuple[str, Optional[str]]: A tuple of the resolved value and an error message
             if a variable is undefined or a circular reference is detected.
-
-        Examples:
-            >>> vm = VariableManager()
-            >>> vm.parse_variables('--color: #ff0000;')
-            >>> resolved, error = vm.resolve_variable('var(--color)')
-            >>> print(resolved, error)
-            '#ff0000' None
         """
         visited: Set[str] = set()
         errors: List[str] = []
@@ -374,10 +361,6 @@ class SelectorUtils:
 
         Returns:
             str: The normalized selector.
-
-        Examples:
-            >>> SelectorUtils.normalize_selector('QPushButton   >   #myButton')
-            'QPushButton > #myButton'
         """
         selectors = [s.strip() for s in selector.split(",") if s.strip()]
         normalized_selectors = []
@@ -388,6 +371,7 @@ class SelectorUtils:
             for placeholder, attr in zip(temp_placeholders, attributes):
                 temp_sel = temp_sel.replace(attr, placeholder)
 
+            temp_sel = re.sub(r"(\w+)(#[-\w]+)", r"\1 \2", temp_sel)
             temp_sel = re.sub(r"\s*>\s*", " > ", temp_sel)
             temp_sel = re.sub(r"\s+", " ", temp_sel)
             temp_sel = temp_sel.strip()
@@ -411,10 +395,6 @@ class SelectorUtils:
         Returns:
             Tuple[Optional[str], Optional[str], List[str], List[str]]: A tuple of
             (object_name, class_name, attributes, pseudo_states).
-
-        Examples:
-            >>> SelectorUtils.parse_selector('#myButton:hover')
-            ('myButton', None, [], ['hover'])
         """
         object_name: Optional[str] = None
         class_name: Optional[str] = None
@@ -488,6 +468,18 @@ class SelectorUtils:
                         f"Malformed attribute selector '{attr}'"
                     )
 
+            parts = re.split(r"([>]\s*)", sel)
+            for part in parts:
+                if part.strip() in ["", ">"]:
+                    continue
+                sub_parts = part.split()
+                for i, sub_part in enumerate(sub_parts):
+                    if sub_part.startswith("[") and i > 0:
+                        errors.append(
+                            f"Error on line {line_num}: Invalid selector: '{sel}'. "
+                            f"Space not allowed before attribute selector '{sub_part}'"
+                        )
+
             matches = re.finditer(Constants.PSEUDO_PATTERN, sel)
             for match in matches:
                 prefix, colon, pseudo = match.groups()
@@ -497,14 +489,6 @@ class SelectorUtils:
                     errors.append(
                         f"Error on line {line_num}: Invalid spacing in selector: '{sel}'. "
                         f"No space allowed between '{prefix}' and '{colon}{pseudo}' ({pseudo_type})"
-                    )
-
-            parts = re.split(r"\s+", sel)
-            for part in parts:
-                if re.match(Constants.CLASS_ID_PATTERN, part):
-                    errors.append(
-                        f"Error on line {line_num}: Invalid selector: '{sel}'. "
-                        f"Space required between class and ID in '{part}'"
                     )
 
             for match in re.finditer(Constants.COMBINATOR_PATTERN, sel):
@@ -526,26 +510,16 @@ class QSSFormatter:
         """
         Format a QSS rule in the standardized QSS format.
 
-        Parameters
-        ----------
-        selector : str
-            The selector for the rule.
-        properties : List[QSSProperty]
-            The properties to include.
+        Args:
+            selector: The selector for the rule.
+            properties: The properties to include.
 
-        Returns
-        -------
-        str
-            The formatted rule string.
-
-        Examples
-        --------
-        >>> prop = QSSProperty('color', 'blue')
-        >>> QSSFormatter.format_rule('QPushButton', [prop])
-        'QPushButton {\n    color: blue;\n}\n'
+        Returns:
+            str: The formatted rule string.
         """
+        normalized_selector = SelectorUtils.normalize_selector(selector)
         props = "\n".join(f"    {p.name}: {p.value};" for p in properties)
-        return f"{selector} {{\n{props}\n}}\n"
+        return f"{normalized_selector} {{\n{props}\n}}\n"
 
 
 class DefaultPropertyProcessor:
@@ -555,10 +529,8 @@ class DefaultPropertyProcessor:
         """
         Initialize the property processor.
 
-        Parameters
-        ----------
-        error_handler : ErrorHandlerProtocol
-            Callback for reporting errors during property processing.
+        Args:
+            error_handler: Callback for reporting errors during property processing.
         """
         self._error_handler = error_handler
         self._logger: logging.Logger = logging.getLogger(__name__)
@@ -573,16 +545,11 @@ class DefaultPropertyProcessor:
         """
         Process a property line and add it to the given rules.
 
-        Parameters
-        ----------
-        line : str
-            The property line to process (e.g., 'color: blue;').
-        rules : List[QSSRule]
-            The list of rules to add the property to.
-        variable_manager : VariableManager
-            Manager for resolving variables in property values.
-        line_num : int
-            Line number for error reporting.
+        Args:
+            line: The property line to process (e.g., 'color: blue;').
+            rules: The list of rules to add the property to.
+            variable_manager: Manager for resolving variables in property values.
+            line_num: Line number for error reporting.
         """
         line = line.strip()
         if not rules or not line:
@@ -592,23 +559,26 @@ class DefaultPropertyProcessor:
             return
         parts = line.split(":", 1)
         if len(parts) != 2:
-            self._logger.warning(f"Malformed property on line {line_num}: {line}")
+            self._error_handler.dispatch_error(
+                f"Error on line {line_num}: Malformed property: {line}"
+            )
             return
         name = parts[0].strip()
         value = parts[1].strip().rstrip(";").strip()
         if not name or not value:
-            self._logger.warning(
-                f"Invalid property on line {line_num}: Empty name or value in '{line}'"
+            self._error_handler.dispatch_error(
+                f"Error on line {line_num}: Invalid property: Empty name or value in '{line}'"
             )
             return
         if not self._is_valid_property_name(name):
-            self._logger.warning(
-                f"Invalid property name on line {line_num}: '{name}' in '{line}'"
+            self._error_handler.dispatch_error(
+                f"Error on line {line_num}: Invalid property name: '{name}'"
             )
             return
         resolved_value, error = variable_manager.resolve_variable(value)
         if error:
             self._error_handler.dispatch_error(f"Error on line {line_num}: {error}")
+            return
         normalized_line = f"{name}: {resolved_value};"
         for rule in rules:
             rule.original += f"    {normalized_line}\n"
@@ -628,7 +598,7 @@ class DefaultPropertyProcessor:
         return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
 
 
-# === Parser State and Validation ===
+# === Parser State ===
 
 
 class ParserState:
@@ -647,6 +617,7 @@ class ParserState:
         self.variable_buffer: str = ""
         self.current_line: int = 1
         self.property_lines: List[str] = []
+        self.rule_start_line: int = 0
 
     def reset(self) -> None:
         """Reset the parser state to initial values."""
@@ -661,430 +632,722 @@ class ParserState:
         self.variable_buffer = ""
         self.current_line = 1
         self.property_lines = []
+        self.rule_start_line = 0
 
 
-class QSSSyntaxChecker:
-    """Validates QSS syntax for correctness, including variables, selectors, and properties."""
+# === Plugins ===
 
-    def __init__(self) -> None:
-        """Initialize the QSS syntax checker."""
-        self._logger: logging.Logger = logging.getLogger(__name__)
-        self._selector_buffer: List[str] = []
 
-    def check_format(self, qss_text: str) -> List[str]:
+class QSSParserPlugin(ABC):
+    """Abstract base class for QSS parser plugins."""
+
+    @abstractmethod
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
         """
-        Validate the format of QSS text for syntax errors.
+        Process a line of QSS text.
 
         Args:
-            qss_text: The QSS text to validate.
+            line: The line to process.
+            state: The current parser state.
+            variable_manager: Manager for resolving variables.
 
         Returns:
-            List[str]: List of error messages in the format: "Error on line {num}: {description}: {content}".
+            bool: True if the line was handled, else False.
         """
-        errors: List[str] = []
-        lines = qss_text.splitlines()
-        in_comment: bool = False
-        in_rule: bool = False
-        in_variables: bool = False
-        open_braces: int = 0
-        current_selector: str = ""
-        last_line_num: int = 0
-        property_buffer: str = ""
+        pass
 
-        for line_num, line in enumerate(lines, start=1):
-            line = line.strip()
-            if not line:
-                continue
 
-            if self._handle_comments(line, in_comment):
-                in_comment = True
-                continue
-            if in_comment:
-                if "*/" in line:
-                    in_comment = False
-                continue
+class BaseQSSPlugin(QSSParserPlugin):
+    """Abstract base class for QSS parser plugins, providing common functionality."""
 
-            if SelectorUtils.is_complete_rule(line):
-                errors.extend(self._validate_complete_rule(line, line_num))
-                self._selector_buffer = []
-                continue
+    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
+        """
+        Initialize the base plugin.
 
-            if in_variables:
-                if line == "}":
-                    open_braces -= 1
-                    in_variables = open_braces > 0
-                    continue
-                property_buffer = (property_buffer + " " + line).strip()
-                continue
+        Args:
+            error_handler: Callback for reporting errors.
+        """
+        self._error_handler = error_handler
+        self._logger: logging.Logger = logging.getLogger(__name__)
 
-            if in_rule:
-                if line == "}":
-                    if open_braces == 0:
-                        errors.append(
-                            f"Error on line {line_num}: Closing brace '}}' without matching '{{': {line}"
-                        )
-                    else:
-                        errors.extend(
-                            self._validate_pending_properties(
-                                property_buffer, line_num - 1, is_last_rule=True
-                            )
-                        )
-                        property_buffer = ""
-                        open_braces -= 1
-                        in_rule = open_braces > 0
-                        if not in_rule:
-                            current_selector = ""
-                    continue
+    def _process_property_line(
+        self,
+        line: str,
+        state: ParserState,
+        property_processor: PropertyProcessorProtocol,
+        variable_manager: VariableManager,
+    ) -> bool:
+        """
+        Process a property line, handling buffering and splitting by semicolons.
 
-                if line.endswith("{"):
-                    if line.startswith("@variables"):
-                        errors.append(
-                            f"Error on line {line_num}: Nested @variables block: {line}"
+        Args:
+            line: The line to process.
+            state: The current parser state.
+            property_processor: Processor for handling individual properties.
+            variable_manager: Manager for resolving variables.
+
+        Returns:
+            bool: True if the line was handled, else False.
+        """
+        line = line.strip()
+        if (
+            not state.in_rule
+            or not state.current_rules
+            or state.in_comment
+            or state.in_variables
+        ):
+            return False
+
+        if ";" in line:
+            full_line = (state.buffer + " " + line).strip() if state.buffer else line
+            state.buffer = ""
+            parts = full_line.split(";")
+            for part in parts[:-1]:
+                if part.strip():
+                    property_processor.process_property(
+                        part.strip() + ";",
+                        state.current_rules,
+                        variable_manager,
+                        state.current_line,
+                    )
+            if parts[-1].strip():
+                state.buffer = parts[-1].strip()
+            return True
+
+        state.buffer = (state.buffer + " " + line).strip()
+        return True
+
+
+class SelectorPlugin(BaseQSSPlugin):
+    """Plugin for handling QSS selector lines."""
+
+    def __init__(
+        self,
+        property_processor: PropertyProcessorProtocol,
+        rule_handler: RuleHandlerProtocol,
+        error_handler: ErrorHandlerProtocol,
+    ) -> None:
+        """
+        Initialize the selector plugin.
+
+        Args:
+            property_processor: Processor for handling properties.
+            rule_handler: Handler for adding or merging rules.
+            error_handler: Callback for reporting errors.
+        """
+        super().__init__(error_handler)
+        self._property_processor = property_processor
+        self._rule_handler = rule_handler
+
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
+        """
+        Process selector-related lines (e.g., starting/ending rules, complete rules).
+
+        Args:
+            line: The line to process.
+            state: The current parser state.
+            variable_manager: Manager for resolving variables.
+
+        Returns:
+            bool: True if the line was handled, else False.
+        """
+        line = line.strip()
+        if not line or state.in_comment or state.in_variables:
+            return False
+
+        if SelectorUtils.is_complete_rule(line):
+            self._process_complete_rule(line, state, variable_manager)
+            return True
+
+        if line.endswith(","):
+            selector_part = line[:-1].strip()
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            return True
+
+        if line.endswith("{") and not state.in_rule:
+            state.buffer = ""
+            state.property_lines = []
+            selector_part = line[:-1].strip()
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            if not state.current_selectors and not selector_part:
+                self._error_handler.dispatch_error(
+                    f"Error on line {state.current_line}: Empty selector before '{{': {{"
+                )
+                state.in_rule = True
+                state.rule_start_line = state.current_line
+                return True
+            full_selector = ", ".join(state.current_selectors)
+            errors = SelectorUtils.validate_selector_syntax(
+                full_selector, state.current_line
+            )
+            if errors:
+                for error in errors:
+                    self._error_handler.dispatch_error(error)
+                if any("Duplicate selector" in error for error in errors):
+                    seen_selectors = set()
+                    unique_selectors = []
+                    for sel in state.current_selectors:
+                        if sel not in seen_selectors:
+                            unique_selectors.append(sel)
+                            seen_selectors.add(sel)
+                    state.current_selectors = unique_selectors
+                else:
+                    state.current_selectors = []
+                if not state.current_selectors:
+                    state.in_rule = True
+                    state.rule_start_line = state.current_line
+                    return True
+            state.original_selector = ", ".join(state.current_selectors)
+            state.current_rules = [
+                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
+            ]
+            state.in_rule = True
+            state.rule_start_line = state.current_line
+            state.current_selectors = []
+            return True
+
+        if line == "}" and state.in_rule:
+            if state.property_lines:
+                base_line = state.rule_start_line + 1
+                for i, prop_line in enumerate(state.property_lines[:-1]):
+                    line_num = base_line + i
+                    if not prop_line.strip().endswith(";"):
+                        self._error_handler.dispatch_error(
+                            f"Error on line {line_num}: Property missing ';': {prop_line}"
                         )
                         continue
-                    errors.extend(
-                        self._validate_pending_properties(
-                            property_buffer, line_num - 1, is_last_rule=False
+                    try:
+                        self._property_processor.process_property(
+                            prop_line,
+                            state.current_rules,
+                            variable_manager,
+                            line_num,
                         )
-                    )
-                    property_buffer = ""
-                    new_errors, selector = self._validate_selector(line, line_num)
-                    errors.extend(new_errors)
-                    current_selector = selector
-                    open_braces += 1
-                    in_rule = True
-                    last_line_num = line_num
-                    continue
-
-                if line.startswith("@variables"):
-                    errors.append(
-                        f"Error on line {line_num}: Nested @variables block: {line}"
-                    )
-                    continue
-
-                property_buffer, new_errors = self._process_property_line(
-                    line, property_buffer, line_num
-                )
-                errors.extend(new_errors)
-                last_line_num = line_num
-            else:
-                if line == "@variables {":
-                    if open_braces > 0:
-                        errors.append(
-                            f"Error on line {line_num}: Nested @variables block: {line}"
-                        )
-                    open_braces += 1
-                    in_variables = True
-                    last_line_num = line_num
-                    continue
-                if line.endswith("{"):
-                    new_errors, selector = self._validate_selector(line, line_num)
-                    if self._selector_buffer:
-                        selector = ", ".join(self._selector_buffer + [selector])
-                        new_errors.extend(
-                            SelectorUtils.validate_selector_syntax(selector, line_num)
-                        )
-                    errors.extend(new_errors)
-                    current_selector = selector
-                    open_braces += 1
-                    in_rule = True
-                    last_line_num = line_num
-                    self._selector_buffer = []
-                elif line.endswith(","):
-                    selector = line[:-1].strip()
-                    if selector:
-                        self._selector_buffer.append(selector)
-                    last_line_num = line_num
-                elif self._is_property_line(line):
-                    errors.append(
-                        f"Error on line {line_num}: Property outside block: {line}"
-                    )
-                elif line == "}":
-                    errors.append(
-                        f"Error on line {line_num}: Closing brace '}}' without matching '{{': {line}"
-                    )
-                else:
-                    if self._is_potential_selector(line) and not self._selector_buffer:
-                        errors.append(
-                            f"Error on line {line_num}: Selector without opening brace '{{': {line}"
+                    except Exception as e:
+                        self._error_handler.dispatch_error(
+                            f"Error on line {line_num}: Invalid property: {prop_line} ({str(e)})"
                         )
 
-        errors.extend(
-            self._finalize_validation(
-                open_braces, current_selector, property_buffer, last_line_num
+                last_prop = state.property_lines[-1].strip()
+                if last_prop:
+                    line_num = base_line + len(state.property_lines) - 1
+                    parts = last_prop.split(":", 1)
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        self._error_handler.dispatch_error(
+                            f"Error on line {line_num}: Invalid last property: {last_prop}"
+                        )
+                    else:
+                        try:
+                            self._property_processor.process_property(
+                                last_prop
+                                + (";" if not last_prop.endswith(";") else ""),
+                                state.current_rules,
+                                variable_manager,
+                                line_num,
+                            )
+                        except Exception as e:
+                            self._error_handler.dispatch_error(
+                                f"Error on line {line_num}: Invalid last property: {last_prop} ({str(e)})"
+                            )
+
+            for rule in state.current_rules:
+                rule.original += "}\n"
+                self._rule_handler.handle_rule(rule)
+
+            state.current_rules = []
+            state.in_rule = False
+            state.current_selectors = []
+            state.original_selector = None
+            state.property_lines = []
+            state.buffer = ""
+            state.rule_start_line = 0
+            return True
+
+        if line.endswith("{") and state.in_rule:
+            self._error_handler.dispatch_error(
+                f"Error on line {state.rule_start_line}: Unclosed brace '{{' for selector: {state.original_selector}"
             )
-        )
-        return errors
+            state.current_rules = []
+            state.in_rule = False
+            state.current_selectors = []
+            state.original_selector = None
+            state.property_lines = []
+            state.buffer = ""
+            selector_part = line[:-1].strip()
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            if not state.current_selectors and not selector_part:
+                self._error_handler.dispatch_error(
+                    f"Error on line {state.current_line}: Empty selector before '{{': {{"
+                )
+                state.in_rule = True
+                state.rule_start_line = state.current_line
+                return True
+            full_selector = ", ".join(state.current_selectors)
+            errors = SelectorUtils.validate_selector_syntax(
+                full_selector, state.current_line
+            )
+            if errors:
+                for error in errors:
+                    self._error_handler.dispatch_error(error)
+                if any("Duplicate selector" in error for error in errors):
+                    seen_selectors = set()
+                    unique_selectors = []
+                    for sel in state.current_selectors:
+                        if sel not in seen_selectors:
+                            unique_selectors.append(sel)
+                            seen_selectors.add(sel)
+                    state.current_selectors = unique_selectors
+                else:
+                    state.current_selectors = []
+                if not state.current_selectors:
+                    state.in_rule = True
+                    state.rule_start_line = state.current_line
+                    return True
+            state.original_selector = ", ".join(state.current_selectors)
+            state.current_rules = [
+                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
+            ]
+            state.in_rule = True
+            state.rule_start_line = state.current_line
+            state.current_selectors = []
+            return True
 
-    def _validate_complete_rule(self, line: str, line_num: int) -> List[str]:
+        return False
+
+    def _process_complete_rule(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> None:
         """
-        Validate a complete QSS rule in a single line.
+        Process a complete QSS rule in a single line.
 
         Args:
             line: The line containing the complete rule.
-            line_num: The line number.
-
-        Returns:
-            List[str]: List of error messages for the rule.
+            state: The current parser state.
+            variable_manager: Manager for resolving variables.
         """
-        errors: List[str] = []
         match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
         if not match:
-            return [f"Error on line {line_num}: Malformed rule: {line}"]
-
+            self._error_handler.dispatch_error(
+                f"Error on line {state.current_line}: Malformed rule: {line}"
+            )
+            return
         selector, properties = match.groups()
-        selector = selector.strip()
-        if not selector:
-            errors.append(f"Error on line {line_num}: Empty selector in rule: {line}")
-        else:
-            errors.extend(SelectorUtils.validate_selector_syntax(selector, line_num))
-
+        normalized_selector = SelectorUtils.normalize_selector(selector.strip())
+        selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
+        if not selectors:
+            return
+        state.current_selectors = selectors
+        state.original_selector = normalized_selector
+        state.current_rules = [
+            QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
+        ]
         if properties.strip():
-            prop_parts = properties.split(";")
-            for part in prop_parts[:-1]:
-                part = part.strip()
-                if part:
-                    if ":" not in part or part.endswith(":"):
-                        errors.append(
-                            f"Error on line {line_num}: Malformed property: {part}"
-                        )
-                    elif not part.split(":", 1)[1].strip():
-                        errors.append(
-                            f"Error on line {line_num}: Property missing value: {part}"
-                        )
-                    else:
-                        prop_name = part.split(":", 1)[0].strip()
-                        if not self._is_valid_property_name(prop_name):
-                            errors.append(
-                                f"Error on line {line_num}: Invalid property name: '{prop_name}'"
-                            )
-            last_part = prop_parts[-1].strip()
-            if last_part:
-                if ":" not in last_part or last_part.endswith(":"):
-                    errors.append(
-                        f"Error on line {line_num}: Malformed last property: {last_part}"
+            prop_lines = [p.strip() for p in properties.split(";") if p.strip()]
+            for i, prop_line in enumerate(prop_lines[:-1]):
+                if not prop_line.endswith(";"):
+                    self._error_handler.dispatch_error(
+                        f"Error on line {state.current_line}: Property missing ';': {prop_line}"
+                    )
+                    continue
+                try:
+                    self._property_processor.process_property(
+                        prop_line,
+                        state.current_rules,
+                        variable_manager,
+                        state.current_line,
+                    )
+                except Exception as e:
+                    self._error_handler.dispatch_error(
+                        f"Error on line {state.current_line}: Invalid property: {prop_line} ({str(e)})"
+                    )
+            last_prop = prop_lines[-1].strip()
+            if last_prop:
+                parts = last_prop.split(":", 1)
+                if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                    self._error_handler.dispatch_error(
+                        f"Error on line {state.current_line}: Invalid last property: {last_prop}"
                     )
                 else:
-                    prop_name = last_part.split(":", 1)[0].strip()
-                    prop_value = last_part.split(":", 1)[1].strip()
-                    if not prop_value:
-                        errors.append(
-                            f"Error on line {line_num}: Property missing value: {last_part}"
+                    try:
+                        self._property_processor.process_property(
+                            last_prop + (";" if not last_prop.endswith(";") else ""),
+                            state.current_rules,
+                            variable_manager,
+                            state.current_line,
                         )
-                    elif not self._is_valid_property_name(prop_name):
-                        errors.append(
-                            f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                    except Exception as e:
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
                         )
 
-        return errors
+        for rule in state.current_rules:
+            if rule.properties:
+                rule.original += "}\n"
+                self._rule_handler.handle_rule(rule)
 
-    def _is_valid_property_name(self, name: str) -> bool:
+        state.current_rules = []
+        state.current_selectors = []
+        state.original_selector = None
+        state.property_lines = []
+
+
+class PropertyPlugin(BaseQSSPlugin):
+    """Plugin for handling QSS property lines."""
+
+    def __init__(
+        self,
+        property_processor: PropertyProcessorProtocol,
+        error_handler: ErrorHandlerProtocol,
+    ) -> None:
         """
-        Check if a property name is valid according to QSS conventions.
+        Initialize the property plugin.
 
         Args:
-            name: The property name to validate.
-
-        Returns:
-            bool: True if the property name is valid, else False.
+            property_processor: Processor for handling properties.
+            error_handler: Callback for reporting errors.
         """
-        return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
+        super().__init__(error_handler)
+        self._property_processor = property_processor
 
-    def _is_potential_selector(self, line: str) -> bool:
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
         """
-        Check if the line could be a selector (but not a complete rule or property).
+        Collect property-related lines within a rule for later processing.
 
         Args:
-            line: The line to check.
+            line: The line to process.
+            state: The current parser state.
+            variable_manager: Manager for resolving variables.
 
         Returns:
-            bool: True if the line looks like a selector, else False.
+            bool: True if the line was handled as a property, else False.
         """
-        return (
-            not SelectorUtils.is_complete_rule(line)
-            and not self._is_property_line(line)
-            and not line.startswith("/*")
-            and not line.startswith("@variables")
-            and "*/" not in line
-            and not line == "}"
-            and not line.endswith(",")
-            and bool(re.match(r"^\s*[^/][^{};]*\s*$", line))
-        )
+        line = line.strip()
+        if not state.in_rule or state.in_comment or state.in_variables:
+            return False
+        if line.endswith("{") or line == "}":
+            return False
+        if line:
+            state.property_lines.append(line)
+        return True
 
-    def _handle_comments(self, line: str, in_comment: bool) -> bool:
+
+class VariablePlugin(QSSParserPlugin):
+    """Plugin for handling QSS @variables blocks."""
+
+    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
         """
-        Check if the line starts a comment block.
+        Initialize the variable plugin.
 
         Args:
-            line: The line to check.
-            in_comment: Whether currently inside a comment block.
-
-        Returns:
-            bool: True if the line starts a new comment block, else False.
+            error_handler: Callback for reporting errors during variable parsing.
         """
-        return line.startswith("/*") and not in_comment
-
-    def _validate_selector(self, line: str, line_num: int) -> Tuple[List[str], str]:
-        """
-        Validate a line containing a selector and an opening brace.
-
-        Args:
-            line: The line to validate.
-            line_num: The line number.
-
-        Returns:
-            Tuple[List[str], str]: A tuple of error messages and the extracted selector.
-        """
-        errors: List[str] = []
-        selector = line[:-1].strip()
-        if not selector:
-            errors.append(
-                f"Error on line {line_num}: Empty selector before '{{': {line}"
-            )
-        else:
-            errors.extend(SelectorUtils.validate_selector_syntax(selector, line_num))
-        return errors, selector
-
-    def _is_property_line(self, line: str) -> bool:
-        """
-        Check if the line contains a property (e.g., 'color: blue;').
-
-        Args:
-            line: The line to check.
-
-        Returns:
-            bool: True if the line is a valid property line, else False.
-        """
-        return ":" in line and not line.startswith("@variables")
-
-    def _process_property_line(
-        self, line: str, buffer: str, line_num: int
-    ) -> Tuple[str, List[str]]:
-        """
-        Process a property line, accumulating in the buffer and checking for semicolons and property names.
-
-        Args:
-            line: The current line to process.
-            buffer: The buffer of accumulated properties.
-            line_num: The current line number.
-
-        Returns:
-            Tuple[str, List[str]]: Updated buffer and list of error messages.
-        """
-        errors: List[str] = []
-        if ";" in line and buffer.strip():
-            if not buffer.endswith(";"):
-                errors.append(
-                    f"Error on line {line_num - 1}: Property missing ';': {buffer.strip()}"
-                )
-            buffer = ""
-
-        if ";" in line:
-            full_line = (buffer + " " + line).strip() if buffer else line
-            parts = full_line.split(";")
-            for part in parts[:-1]:
-                part = part.strip()
-                if part:
-                    if ":" not in part or part.strip().endswith(":"):
-                        errors.append(
-                            f"Error on line {line_num}: Malformed property: {part.strip()}"
-                        )
-                    else:
-                        prop_name = part.split(":", 1)[0].strip()
-                        if not self._is_valid_property_name(prop_name):
-                            errors.append(
-                                f"Error on line {line_num}: Invalid property name: '{prop_name}'"
-                            )
-            buffer = parts[-1].strip() if parts[-1].strip() else ""
-        else:
-            buffer = (buffer + " " + line).strip()
-        return buffer, errors
-
-    def _validate_pending_properties(
-        self, buffer: str, line_num: int, is_last_rule: bool
-    ) -> List[str]:
-        """
-        Validate pending properties in the buffer for missing semicolons and invalid property names.
-
-        Args:
-            buffer: The buffer containing pending properties.
-            line_num: The line number for errors.
-            is_last_rule: Whether this is the last property of a rule (allows omitting semicolon).
-
-        Returns:
-            List[str]: List of error messages for invalid properties.
-        """
-        errors: List[str] = []
-        if buffer.strip():
-            parts = buffer.split(":", 1)
-            prop_name = parts[0].strip()
-            prop_value = parts[1].strip() if len(parts) > 1 else ""
-            if not prop_name or not prop_value:
-                errors.append(
-                    f"Error on line {line_num}: Malformed property: {buffer.strip()}"
-                )
-            elif not self._is_valid_property_name(prop_name):
-                errors.append(
-                    f"Error on line {line_num}: Invalid property name: '{prop_name}'"
-                )
-            elif not is_last_rule and not buffer.endswith(";"):
-                errors.append(
-                    f"Error on line {line_num}: Property missing ';': {buffer.strip()}"
-                )
-        return errors
-
-    def _finalize_validation(
-        self, open_braces: int, current_selector: str, buffer: str, last_line_num: int
-    ) -> List[str]:
-        """
-        Validate final conditions, such as unclosed braces or pending properties.
-
-        Args:
-            open_braces: Number of open braces.
-            current_selector: The current selector being processed.
-            buffer: The buffer of pending properties.
-            last_line_num: The last line number processed.
-
-        Returns:
-            List[str]: List of error messages for final validation issues.
-        """
-        errors: List[str] = []
-        if open_braces > 0 and current_selector:
-            errors.append(
-                f"Error on line {last_line_num}: Unclosed brace '{{' for selector: {current_selector}"
-            )
-        errors.extend(
-            self._validate_pending_properties(buffer, last_line_num, is_last_rule=True)
-        )
-        return errors
-
-
-class QSSValidator:
-    """Wrapper class for QSS validation, delegating to QSSSyntaxChecker."""
-
-    def __init__(self) -> None:
-        """Initialize the QSS validator."""
-        self._checker: QSSSyntaxChecker = QSSSyntaxChecker()
+        self._error_handler = error_handler
         self._logger: logging.Logger = logging.getLogger(__name__)
 
-    def check_format(self, qss_text: str) -> List[str]:
+    def process_line(
+        self, line: str, state: ParserState, variable_manager: VariableManager
+    ) -> bool:
         """
-        Validate the format of QSS text.
+        Process variable-related lines (e.g., @variables blocks).
 
-        Parameters
-        ----------
-        qss_text : str
-            The QSS text to validate.
+        Args:
+            line: The line to process.
+            state: The current parser state.
+            variable_manager: Manager for resolving variables.
 
-        Returns
-        -------
-        List[str]
-            List of error messages.
+        Returns:
+            bool: True if the line was handled, else False.
         """
-        return self._checker.check_format(qss_text)
+        line = line.strip()
+        if state.in_comment:
+            if "*/" in line:
+                state.in_comment = False
+            return True
+        if line.startswith("/*"):
+            state.in_comment = True
+            return True
+        if line == "@variables {" and not state.in_rule:
+            state.in_variables = True
+            state.variable_buffer = ""
+            return True
+        if state.in_variables:
+            if line == "}":
+
+                def dispatch_variable_defined(name: str, value: str) -> None:
+                    if isinstance(self._error_handler, QSSParser):
+                        for handler in self._error_handler._event_handlers.get(
+                            "variable_defined", []
+                        ):
+                            handler(name, value)
+
+                errors = variable_manager.parse_variables(
+                    state.variable_buffer,
+                    state.current_line,
+                    on_variable_defined=dispatch_variable_defined,
+                )
+                for error in errors:
+                    self._error_handler.dispatch_error(error)
+                state.in_variables = False
+                state.variable_buffer = ""
+                return True
+            state.variable_buffer = (state.variable_buffer + " " + line).strip()
+            return True
+        return False
 
 
-# === Style Selection ===
+# === Main Parser ===
+
+
+class QSSParser:
+    """Main QSS parser for parsing and applying styles to widgets."""
+
+    def __init__(
+        self,
+        property_processor: Optional[PropertyProcessorProtocol] = None,
+        plugins: Optional[List[QSSParserPlugin]] = None,
+    ) -> None:
+        """
+        Initialize the QSS parser.
+
+        Args:
+            property_processor: Custom processor for handling properties, by default None (uses DefaultPropertyProcessor).
+            plugins: List of plugins for custom parsing logic, by default None (uses default plugins).
+        """
+        self._state: ParserState = ParserState()
+        self._style_selector: QSSStyleSelector = QSSStyleSelector()
+        self._variable_manager: VariableManager = VariableManager()
+        self._event_handlers: Dict[str, List[Callable[..., None]]] = {
+            "rule_added": [],
+            "error_found": [],
+            "variable_defined": [],
+            "parse_completed": [],
+        }
+        self._rule_map: Dict[str, QSSRule] = {}
+        self._logger: logging.Logger = logging.getLogger(__name__)
+
+        self._error_handler: ErrorHandlerProtocol = self
+        self._property_processor: PropertyProcessorProtocol = (
+            property_processor if property_processor else DefaultPropertyProcessor(self)
+        )
+
+        self._plugins: List[QSSParserPlugin] = plugins or [
+            VariablePlugin(self._error_handler),
+            SelectorPlugin(self._property_processor, self, self._error_handler),
+            PropertyPlugin(self._property_processor, self._error_handler),
+        ]
+
+    def dispatch_error(self, error: str) -> None:
+        """
+        Dispatch an error message to registered handlers.
+
+        Args:
+            error: The error message to dispatch.
+        """
+        self._logger.warning(f"Error: {error}")
+        for handler in self._event_handlers["error_found"]:
+            handler(error)
+
+    def handle_rule(self, rule: QSSRule) -> None:
+        """
+        Handle a new or updated rule, merging with existing rules if necessary.
+
+        Args:
+            rule: The rule to add or merge.
+        """
+        self._logger.debug(f"Handling rule: {rule.selector}")
+        existing_rule = self._rule_map.get(rule.selector)
+        if existing_rule:
+            prop_map = {p.name: p for p in existing_rule.properties}
+            for prop in rule.properties:
+                prop_map[prop.name] = prop
+            existing_rule.properties = list(prop_map.values())
+            existing_rule.original = QSSFormatter.format_rule(
+                existing_rule.selector, existing_rule.properties
+            )
+            for handler in self._event_handlers["rule_added"]:
+                handler(existing_rule)
+        else:
+            self._rule_map[rule.selector] = rule
+            self._state.rules.append(rule)
+            for handler in self._event_handlers["rule_added"]:
+                handler(rule)
+
+        if (
+            ":" in rule.selector
+            and "::" not in rule.selector
+            and "," not in rule.selector
+        ):
+            base_rule = rule.clone_without_pseudo_elements()
+            base_selector = base_rule.selector
+            existing_base = self._rule_map.get(base_selector)
+            if existing_base:
+                prop_map = {p.name: p for p in existing_base.properties}
+                for prop in base_rule.properties:
+                    prop_map[prop.name] = prop
+                existing_base.properties = list(prop_map.values())
+                existing_base.original = QSSFormatter.format_rule(
+                    base_selector, existing_base.properties
+                )
+                for handler in self._event_handlers["rule_added"]:
+                    handler(existing_base)
+            else:
+                self._rule_map[base_selector] = base_rule
+                self._state.rules.append(base_rule)
+                for handler in self._event_handlers["rule_added"]:
+                    handler(base_rule)
+
+    def on(self, event: str, handler: Callable[..., None]) -> None:
+        """
+        Register an event handler for parser events.
+
+        Args:
+            event: The event to listen for ('rule_added', 'error_found', 'variable_defined', 'parse_completed').
+            handler: The function to call when the event occurs.
+        """
+        if event in self._event_handlers:
+            self._event_handlers[event].append(handler)
+            self._logger.debug(f"Registered handler for event: {event}")
+
+    def parse(self, qss_text: str) -> None:
+        """
+        Parse QSS text into a list of QSSRule objects, resolving variables and reporting errors.
+
+        Args:
+            qss_text: The QSS text to parse, including @variables blocks.
+        """
+        self._reset()
+        lines = qss_text.splitlines()
+        for line in lines:
+            self._process_line(line)
+            self._state.current_line += 1
+        if self._state.buffer.strip():
+            try:
+                self._property_processor.process_property(
+                    self._state.buffer,
+                    self._state.current_rules,
+                    self._variable_manager,
+                    self._state.current_line,
+                )
+            except Exception as e:
+                self.dispatch_error(
+                    f"Error on line {self._state.current_line}: Invalid property: {self._state.buffer} ({str(e)})"
+                )
+        if self._state.variable_buffer.strip():
+            errors = self._variable_manager.parse_variables(
+                self._state.variable_buffer, self._state.current_line
+            )
+            for error in errors:
+                self.dispatch_error(error)
+        if self._state.in_rule and self._state.current_rules:
+            self.dispatch_error(
+                f"Error on line {self._state.rule_start_line}: Unclosed brace '{{' for selector: {self._state.original_selector}"
+            )
+            self._state.current_rules = []
+            self._state.in_rule = False
+            self._state.current_selectors = []
+            self._state.original_selector = None
+            self._state.rule_start_line = 0
+        for handler in self._event_handlers["parse_completed"]:
+            handler()
+        self._logger.debug("Parsing completed and parse_completed event dispatched")
+
+    def _reset(self) -> None:
+        """Reset the parser's internal state."""
+        self._state.reset()
+        self._variable_manager = VariableManager()
+        self._rule_map.clear()
+        self._logger.debug("Parser state reset")
+
+    def _process_line(self, line: str) -> None:
+        """
+        Process a single line of QSS text using plugins.
+
+        Args:
+            line: The line to process.
+        """
+        line = line.strip()
+        if not line:
+            return
+
+        if (
+            not self._state.in_rule
+            and not self._state.in_variables
+            and not self._state.in_comment
+            and ":" in line
+            and line.endswith(";")
+        ):
+            self.dispatch_error(
+                f"Error on line {self._state.current_line}: Property outside block: {line}"
+            )
+            return
+
+        for plugin in self._plugins:
+            if plugin.process_line(line, self._state, self._variable_manager):
+                break
+
+    def get_styles_for(
+        self,
+        widget: WidgetProtocol,
+        fallback_class: Optional[str] = None,
+        additional_selectors: Optional[List[str]] = None,
+        include_class_if_object_name: bool = False,
+    ) -> str:
+        """
+        Retrieve QSS styles for a given widget.
+
+        Args:
+            widget: The widget to retrieve styles for.
+            fallback_class: Fallback class to use if no styles are found, by default None.
+            additional_selectors: Additional selectors to include, by default None.
+            include_class_if_object_name: Whether to include class styles if an object name is present, by default False.
+
+        Returns:
+            str: The concatenated QSS styles for the widget.
+        """
+        return self._style_selector.get_styles_for(
+            self._state.rules,
+            widget,
+            fallback_class,
+            additional_selectors,
+            include_class_if_object_name,
+        )
+
+    def __repr__(self) -> str:
+        """Return a string representation of the parser."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """
+        Return a string representation of the parser in standard QSS format.
+
+        Returns:
+            str: The formatted QSS string.
+        """
+        return "\n".join(
+            QSSFormatter.format_rule(rule.selector, rule.properties)
+            for rule in self._state.rules
+        )
 
 
 class QSSStyleSelector:
@@ -1105,31 +1368,15 @@ class QSSStyleSelector:
         """
         Retrieve QSS styles for a widget from a list of rules.
 
-        Parameters
-        ----------
-        rules : List[QSSRule]
-            List of QSSRule objects to search.
-        widget : WidgetProtocol
-            The widget to retrieve styles for.
-        fallback_class : Optional[str], optional
-            Fallback class to use if no styles are found, by default None.
-        additional_selectors : Optional[List[str]], optional
-            Additional selectors to include, by default None.
-        include_class_if_object_name : bool, optional
-            Whether to include class styles if an object name is present, by default False.
+        Args:
+            rules: List of QSSRule objects to search.
+            widget: The widget to retrieve styles for.
+            fallback_class: Fallback class to use if no styles are found, by default None.
+            additional_selectors: Additional selectors to include, by default None.
+            include_class_if_object_name: Whether to include class styles if an object name is present, by default False.
 
-        Returns
-        -------
-        str
-            The concatenated QSS styles for the widget.
-
-        Examples
-        --------
-        >>> selector = QSSStyleSelector()
-        >>> rule = QSSRule('QPushButton', original='QPushButton {\\n    color: blue;\\n}\\n')
-        >>> styles = selector.get_styles_for([rule], widget)
-        >>> print(styles)
-        'QPushButton {\n    color: blue;\n}'
+        Returns:
+            str: The concatenated QSS styles for the widget.
         """
         object_name: str = widget.objectName()
         class_name: str = widget.metaObject().className()
@@ -1183,21 +1430,14 @@ class QSSStyleSelector:
         """
         Retrieve rules matching a given selector, considering objectName and className constraints.
 
-        Parameters
-        ----------
-        rules : List[QSSRule]
-            List of QSSRule objects to search.
-        selector : str
-            The selector to match (e.g., 'QPushButton', '#myButton').
-        object_name : str
-            The widget's objectName.
-        class_name : str
-            The widget's className.
+        Args:
+            rules: List of QSSRule objects to search.
+            selector: The selector to match (e.g., 'QPushButton', '#myButton').
+            object_name: The widget's objectName.
+            class_name: The widget's className.
 
-        Returns
-        -------
-        List[QSSRule]
-            List of matching QSS rules.
+        Returns:
+            List[QSSRule]: List of matching QSS rules.
         """
         matching_rules: Set[QSSRule] = set()
         base_selector = selector.split("::")[0].split(":")[0].strip()
@@ -1247,832 +1487,3 @@ class QSSStyleSelector:
                     matching_rules.add(rule)
 
         return list(matching_rules)
-
-
-# === Plugins ===
-
-
-class QSSParserPlugin(ABC):
-    """Abstract base class for QSS parser plugins."""
-
-    @abstractmethod
-    def process_line(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> bool:
-        """
-        Process a line of QSS text.
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        state : ParserState
-            The current parser state.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-
-        Returns
-        -------
-        bool
-            True if the line was handled, else False.
-        """
-        pass
-
-
-class BaseQSSPlugin(QSSParserPlugin):
-    """Abstract base class for QSS parser plugins, providing common functionality."""
-
-    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
-        """
-        Initialize the base plugin.
-
-        Parameters
-        ----------
-        error_handler : ErrorHandlerProtocol
-            Callback for reporting errors.
-        """
-        self._error_handler = error_handler
-        self._logger: logging.Logger = logging.getLogger(__name__)
-
-    def _process_property_line(
-        self,
-        line: str,
-        state: ParserState,
-        property_processor: PropertyProcessorProtocol,
-        variable_manager: VariableManager,
-    ) -> bool:
-        """
-        Process a property line, handling buffering and splitting by semicolons.
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        state : ParserState
-            The current parser state.
-        property_processor : PropertyProcessorProtocol
-            Processor for handling individual properties.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-
-        Returns
-        -------
-        bool
-            True if the line was handled, else False.
-        """
-        line = line.strip()
-        if (
-            not state.in_rule
-            or not state.current_rules
-            or state.in_comment
-            or state.in_variables
-        ):
-            return False
-
-        if ";" in line:
-            full_line = (state.buffer + " " + line).strip() if state.buffer else line
-            state.buffer = ""
-            parts = full_line.split(";")
-            for part in parts[:-1]:
-                if part.strip():
-                    property_processor.process_property(
-                        part.strip() + ";",
-                        state.current_rules,
-                        variable_manager,
-                        state.current_line,
-                    )
-            if parts[-1].strip():
-                state.buffer = parts[-1].strip()
-            return True
-
-        state.buffer = (state.buffer + " " + line).strip()
-        return True
-
-
-class SelectorPlugin(BaseQSSPlugin):
-    """Plugin for handling QSS selector lines."""
-
-    def __init__(
-        self,
-        property_processor: PropertyProcessorProtocol,
-        rule_handler: RuleHandlerProtocol,
-        error_handler: ErrorHandlerProtocol,
-    ) -> None:
-        """
-        Initialize the selector plugin.
-
-        Parameters
-        ----------
-        property_processor : PropertyProcessorProtocol
-            Processor for handling properties.
-        rule_handler : RuleHandlerProtocol
-            Handler for adding or merging rules.
-        error_handler : ErrorHandlerProtocol
-            Callback for reporting errors.
-        """
-        super().__init__(error_handler)
-        self._property_processor = property_processor
-        self._rule_handler = rule_handler
-
-    def process_line(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> bool:
-        """
-        Process selector-related lines (e.g., starting/ending rules, complete rules).
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        state : ParserState
-            The current parser state.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-
-        Returns
-        -------
-        bool
-            True if the line was handled, else False.
-        """
-        line = line.strip()
-        if not line or state.in_comment or state.in_variables:
-            return False
-
-        if SelectorUtils.is_complete_rule(line):
-            self._process_complete_rule(line, state, variable_manager)
-            return True
-
-        if line.endswith(","):
-            selector_part = line[:-1].strip()
-            if selector_part:
-                normalized_selector = SelectorUtils.normalize_selector(selector_part)
-                selectors = [
-                    s.strip() for s in normalized_selector.split(",") if s.strip()
-                ]
-                state.current_selectors.extend(selectors)
-            return True
-
-        if line.endswith("{") and not state.in_rule:
-            state.buffer = ""
-            state.property_lines = []
-            selector_part = line[:-1].strip()
-            if selector_part:
-                normalized_selector = SelectorUtils.normalize_selector(selector_part)
-                selectors = [
-                    s.strip() for s in normalized_selector.split(",") if s.strip()
-                ]
-                state.current_selectors.extend(selectors)
-            if not state.current_selectors:
-                return True
-            state.original_selector = ", ".join(state.current_selectors)
-            state.current_rules = [
-                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
-            ]
-            state.in_rule = True
-            state.current_selectors = []
-            return True
-
-        if line == "}" and state.in_rule:
-            has_invalid_properties = False
-            valid_properties = False
-            if state.property_lines:
-                for i, prop_line in enumerate(state.property_lines[:-1]):
-                    if not prop_line.strip().endswith(";"):
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line - len(state.property_lines) + i}: Property missing ';': {prop_line}"
-                        )
-                        has_invalid_properties = True
-                        continue
-                    try:
-                        self._property_processor.process_property(
-                            prop_line,
-                            state.current_rules,
-                            variable_manager,
-                            state.current_line - len(state.property_lines) + i,
-                        )
-                        valid_properties = True
-                    except Exception as e:
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line - len(state.property_lines) + i}: Invalid property: {prop_line} ({str(e)})"
-                        )
-                        has_invalid_properties = True
-
-                last_prop = state.property_lines[-1].strip()
-                if last_prop:
-                    parts = last_prop.split(":", 1)
-                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line}: Invalid last property: {last_prop}"
-                        )
-                        has_invalid_properties = True
-                    else:
-                        try:
-                            self._property_processor.process_property(
-                                last_prop
-                                + (";" if not last_prop.endswith(";") else ""),
-                                state.current_rules,
-                                variable_manager,
-                                state.current_line,
-                            )
-                            valid_properties = True
-                        except Exception as e:
-                            self._error_handler.dispatch_error(
-                                f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
-                            )
-                            has_invalid_properties = True
-
-            if has_invalid_properties and not valid_properties:
-                invalid_content = f"{state.original_selector} {{\n"
-                invalid_content += "\n".join(
-                    f"    {line}" for line in state.property_lines
-                )
-                invalid_content += "\n}\n"
-                self._logger.warning(
-                    f"Skipping rule with invalid properties: {invalid_content}"
-                )
-                for handler in self._error_handler._event_handlers.get(
-                    "invalid_rule_skipped", []
-                ):
-                    handler(invalid_content)
-            else:
-                for rule in state.current_rules:
-                    if rule.properties:
-                        rule.original += "}\n"
-                        self._rule_handler.handle_rule(rule)
-
-            state.current_rules = []
-            state.in_rule = False
-            state.current_selectors = []
-            state.original_selector = None
-            state.property_lines = []
-            state.buffer = ""
-            return True
-
-        if line.endswith("{") and state.in_rule:
-            self._error_handler.dispatch_error(
-                f"Error on line {state.current_line}: Unclosed brace '{{' for selector: {line}"
-            )
-            has_invalid_properties = False
-            valid_properties = False
-            if state.property_lines:
-                for i, prop_line in enumerate(state.property_lines[:-1]):
-                    if not prop_line.strip().endswith(";"):
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line - len(state.property_lines) + i}: Property missing ';': {prop_line}"
-                        )
-                        has_invalid_properties = True
-                        continue
-                    try:
-                        self._property_processor.process_property(
-                            prop_line,
-                            state.current_rules,
-                            variable_manager,
-                            state.current_line - len(state.property_lines) + i,
-                        )
-                        valid_properties = True
-                    except Exception as e:
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line - len(state.property_lines) + i}: Invalid property: {prop_line} ({str(e)})"
-                        )
-                        has_invalid_properties = True
-                last_prop = state.property_lines[-1].strip()
-                if last_prop:
-                    parts = last_prop.split(":", 1)
-                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line}: Invalid last property: {last_prop}"
-                        )
-                        has_invalid_properties = True
-                    else:
-                        try:
-                            self._property_processor.process_property(
-                                last_prop
-                                + (";" if not last_prop.endswith(";") else ""),
-                                state.current_rules,
-                                variable_manager,
-                                state.current_line,
-                            )
-                            valid_properties = True
-                        except Exception as e:
-                            self._error_handler.dispatch_error(
-                                f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
-                            )
-                            has_invalid_properties = True
-
-            if has_invalid_properties and not valid_properties:
-                invalid_content = f"{state.original_selector} {{\n"
-                invalid_content += "\n".join(
-                    f"    {line}" for line in state.property_lines
-                )
-                invalid_content += "\n}\n"
-                self._logger.warning(
-                    f"Skipping rule with invalid properties: {invalid_content}"
-                )
-                for handler in self._error_handler._event_handlers.get(
-                    "invalid_rule_skipped", []
-                ):
-                    handler(invalid_content)
-            else:
-                for rule in state.current_rules:
-                    if rule.properties:
-                        rule.original += "}\n"
-                        self._rule_handler.handle_rule(rule)
-
-            state.current_rules = []
-            state.in_rule = False
-            state.current_selectors = []
-            state.original_selector = None
-            state.property_lines = []
-            state.buffer = ""
-
-            selector_part = line[:-1].strip()
-            if selector_part:
-                normalized_selector = SelectorUtils.normalize_selector(selector_part)
-                selectors = [
-                    s.strip() for s in normalized_selector.split(",") if s.strip()
-                ]
-                state.current_selectors.extend(selectors)
-            if not state.current_selectors:
-                return True
-            state.original_selector = ", ".join(state.current_selectors)
-            state.current_rules = [
-                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
-            ]
-            state.in_rule = True
-            state.current_selectors = []
-            return True
-
-        return False
-
-    def _process_complete_rule(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> None:
-        """
-        Process a complete QSS rule in a single line.
-
-        Parameters
-        ----------
-        line : str
-            The line containing the complete rule.
-        state : ParserState
-            The current parser state.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-        """
-        match = re.match(r"^\s*([^/][^{}]*)\s*\{([^}]*)\}\s*$", line)
-        if not match:
-            self._error_handler.dispatch_error(
-                f"Error on line {state.current_line}: Malformed rule: {line}"
-            )
-            return
-        selector, properties = match.groups()
-        normalized_selector = SelectorUtils.normalize_selector(selector.strip())
-        selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
-        if not selectors:
-            return
-        state.current_selectors = selectors
-        state.original_selector = normalized_selector
-        state.current_rules = [
-            QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
-        ]
-        has_invalid_properties = False
-        if properties.strip():
-            prop_lines = [p.strip() for p in properties.split(";") if p.strip()]
-            for i, prop_line in enumerate(prop_lines[:-1]):
-                if not prop_line.endswith(";"):
-                    self._error_handler.dispatch_error(
-                        f"Error on line {state.current_line}: Property missing ';': {prop_line}"
-                    )
-                    has_invalid_properties = True
-                    continue
-                self._property_processor.process_property(
-                    prop_line,
-                    state.current_rules,
-                    variable_manager,
-                    state.current_line,
-                )
-            last_prop = prop_lines[-1].strip()
-            if last_prop:
-                parts = last_prop.split(":", 1)
-                if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
-                    self._error_handler.dispatch_error(
-                        f"Error on line {state.current_line}: Invalid last property: {last_prop}"
-                    )
-                    has_invalid_properties = True
-                else:
-                    self._property_processor.process_property(
-                        last_prop + (";" if not last_prop.endswith(";") else ""),
-                        state.current_rules,
-                        variable_manager,
-                        state.current_line,
-                    )
-
-        if has_invalid_properties:
-            invalid_content = f"{state.original_selector} {{\n"
-            invalid_content += "\n".join(f"    {p}" for p in prop_lines)
-            invalid_content += "\n}\n"
-            self._logger.warning(
-                f"Skipping rule with invalid properties: {invalid_content}"
-            )
-            for handler in self._error_handler._event_handlers.get(
-                "invalid_rule_skipped", []
-            ):
-                handler(invalid_content)
-        else:
-            for rule in state.current_rules:
-                rule.original += "}\n"
-                self._rule_handler.handle_rule(rule)
-
-        state.current_rules = []
-        state.current_selectors = []
-        state.original_selector = None
-        state.property_lines = []
-
-
-class PropertyPlugin(BaseQSSPlugin):
-    """Plugin for handling QSS property lines."""
-
-    def __init__(
-        self,
-        property_processor: PropertyProcessorProtocol,
-        error_handler: ErrorHandlerProtocol,
-    ) -> None:
-        """
-        Initialize the property plugin.
-
-        Parameters
-        ----------
-        property_processor : PropertyProcessorProtocol
-            Processor for handling properties.
-        error_handler : ErrorHandlerProtocol
-            Callback for reporting errors.
-        """
-        super().__init__(error_handler)
-        self._property_processor = property_processor
-
-    def process_line(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> bool:
-        """
-        Collect property-related lines within a rule for later processing.
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        state : ParserState
-            The current parser state.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-
-        Returns
-        -------
-        bool
-            True if the line was handled as a property, else False.
-        """
-        line = line.strip()
-        if not state.in_rule or state.in_comment or state.in_variables:
-            return False
-        if line.endswith("{") or line == "}":
-            return False
-        if line:
-            state.property_lines.append(line)
-        return True
-
-
-class VariablePlugin(QSSParserPlugin):
-    """Plugin for handling QSS @variables blocks."""
-
-    def __init__(self, error_handler: ErrorHandlerProtocol) -> None:
-        """
-        Initialize the variable plugin.
-
-        Parameters
-        ----------
-        error_handler : ErrorHandlerProtocol
-            Callback for reporting errors during variable parsing.
-        """
-        self._error_handler = error_handler
-        self._logger: logging.Logger = logging.getLogger(__name__)
-
-    def process_line(
-        self, line: str, state: ParserState, variable_manager: VariableManager
-    ) -> bool:
-        """
-        Process variable-related lines (e.g., @variables blocks).
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        state : ParserState
-            The current parser state.
-        variable_manager : VariableManager
-            Manager for resolving variables.
-
-        Returns
-        -------
-        bool
-            True if the line was handled, else False.
-        """
-        line = line.strip()
-        if state.in_comment:
-            if "*/" in line:
-                state.in_comment = False
-            return True
-        if line.startswith("/*"):
-            state.in_comment = True
-            return True
-        if line == "@variables {" and not state.in_rule:
-            state.in_variables = True
-            state.variable_buffer = ""
-            return True
-        if state.in_variables:
-            if line == "}":
-
-                def dispatch_variable_defined(name: str, value: str) -> None:
-                    if isinstance(self._error_handler, QSSParser):
-                        for handler in self._error_handler._event_handlers.get(
-                            "variable_defined", []
-                        ):
-                            handler(name, value)
-
-                errors = variable_manager.parse_variables(
-                    state.variable_buffer,
-                    state.current_line,
-                    on_variable_defined=dispatch_variable_defined,
-                )
-                for error in errors:
-                    self._error_handler.dispatch_error(error)
-                state.in_variables = False
-                state.variable_buffer = ""
-                return True
-            state.variable_buffer = (state.variable_buffer + " " + line).strip()
-            return True
-        return False
-
-
-# === Main Parser ===
-
-
-class QSSParser:
-    """Main QSS parser for parsing, validating, and applying styles to widgets."""
-
-    def __init__(
-        self,
-        property_processor: Optional[PropertyProcessorProtocol] = None,
-        plugins: Optional[List[QSSParserPlugin]] = None,
-    ) -> None:
-        """
-        Initialize the QSS parser.
-
-        Parameters
-        ----------
-        property_processor : Optional[PropertyProcessorProtocol], optional
-            Custom processor for handling properties, by default None (uses DefaultPropertyProcessor).
-        plugins : Optional[List[QSSParserPlugin]], optional
-            List of plugins for custom parsing logic, by default None (uses default plugins).
-        """
-        self._state: ParserState = ParserState()
-        self._validator: QSSValidator = QSSValidator()
-        self._style_selector: QSSStyleSelector = QSSStyleSelector()
-        self._variable_manager: VariableManager = VariableManager()
-        self._event_handlers: Dict[str, List[Callable[[Any], None]]] = {
-            "rule_added": [],
-            "error_found": [],
-            "variable_defined": [],
-            "parse_completed": [],
-            "invalid_rule_skipped": [],
-        }
-        self._rule_map: Dict[str, QSSRule] = {}
-        self._logger: logging.Logger = logging.getLogger(__name__)
-
-        self._error_handler: ErrorHandlerProtocol = self
-        self._property_processor: PropertyProcessorProtocol = (
-            property_processor if property_processor else DefaultPropertyProcessor(self)
-        )
-
-        self._plugins: List[QSSParserPlugin] = plugins or [
-            VariablePlugin(self._error_handler),
-            SelectorPlugin(self._property_processor, self, self._error_handler),
-            PropertyPlugin(self._property_processor, self._error_handler),
-        ]
-
-    def dispatch_error(self, error: str) -> None:
-        """
-        Dispatch an error message to registered handlers.
-
-        Parameters
-        ----------
-        error : str
-            The error message to dispatch.
-        """
-        self._logger.warning(f"Error: {error}")
-        for handler in self._event_handlers["error_found"]:
-            handler(error)
-
-    def handle_rule(self, rule: QSSRule) -> None:
-        """
-        Handle a new or updated rule, merging with existing rules if necessary.
-
-        Parameters
-        ----------
-        rule : QSSRule
-            The rule to add or merge.
-        """
-        self._logger.debug(f"Handling rule: {rule.selector}")
-        existing_rule = self._rule_map.get(rule.selector)
-        if existing_rule:
-            prop_map = {p.name: p for p in existing_rule.properties}
-            for prop in rule.properties:
-                prop_map[prop.name] = prop
-            existing_rule.properties = list(prop_map.values())
-            existing_rule.original = QSSFormatter.format_rule(
-                existing_rule.selector, existing_rule.properties
-            )
-            for handler in self._event_handlers["rule_added"]:
-                handler(existing_rule)
-        else:
-            self._rule_map[rule.selector] = rule
-            self._state.rules.append(rule)
-            for handler in self._event_handlers["rule_added"]:
-                handler(rule)
-
-        if (
-            ":" in rule.selector
-            and "::" not in rule.selector
-            and "," not in rule.selector
-        ):
-            base_rule = rule.clone_without_pseudo_elements()
-            base_selector = base_rule.selector
-            existing_base = self._rule_map.get(base_selector)
-            if existing_base:
-                prop_map = {p.name: p for p in existing_base.properties}
-                for prop in base_rule.properties:
-                    prop_map[prop.name] = prop
-                existing_base.properties = list(prop_map.values())
-                existing_base.original = QSSFormatter.format_rule(
-                    base_selector, existing_base.properties
-                )
-                for handler in self._event_handlers["rule_added"]:
-                    handler(existing_base)
-            else:
-                self._rule_map[base_selector] = base_rule
-                self._state.rules.append(base_rule)
-                for handler in self._event_handlers["rule_added"]:
-                    handler(base_rule)
-
-    def on(self, event: str, handler: Callable[[Any], None]) -> None:
-        """
-        Register an event handler for parser events.
-
-        Parameters
-        ----------
-        event : str
-            The event to listen for ('rule_added', 'error_found').
-        handler : Callable[[Any], None]
-            The function to call when the event occurs.
-        """
-        if event in self._event_handlers:
-            self._event_handlers[event].append(handler)
-            self._logger.debug(f"Registered handler for event: {event}")
-
-    def parse(self, qss_text: str) -> None:
-        """
-        Parse QSS text into a list of QSSRule objects, resolving variables.
-
-        Parameters
-        ----------
-        qss_text : str
-            The QSS text to parse, including @variables blocks.
-
-        Examples
-        --------
-        >>> parser = QSSParser()
-        >>> qss_text = "QPushButton { color: blue; }"
-        >>> parser.parse(qss_text)
-        """
-        self._reset()
-        lines = qss_text.splitlines()
-        for line in lines:
-            self._process_line(line)
-            self._state.current_line += 1
-        if self._state.buffer.strip():
-            self._property_processor.process_property(
-                self._state.buffer,
-                self._state.current_rules,
-                self._variable_manager,
-                self._state.current_line,
-            )
-        if self._state.variable_buffer.strip():
-            errors = self._variable_manager.parse_variables(
-                self._state.variable_buffer, self._state.current_line
-            )
-            for error in errors:
-                self.dispatch_error(error)
-        if self._state.in_rule and self._state.current_rules:
-            invalid_content = (
-                f"{self._state.original_selector} {{\n"
-                f"{self._state.buffer.strip()}\n"
-            )
-            self._logger.warning(f"Skipping incomplete rule: {invalid_content}")
-            for handler in self._event_handlers["invalid_rule_skipped"]:
-                handler(invalid_content)
-            self._state.current_rules = []
-            self._state.in_rule = False
-            self._state.current_selectors = []
-            self._state.original_selector = None
-        for handler in self._event_handlers["parse_completed"]:
-            handler()
-        self._logger.debug("Parsing completed and parse_completed event dispatched")
-
-    def _reset(self) -> None:
-        """Reset the parser's internal state."""
-        self._state.reset()
-        self._variable_manager = VariableManager()
-        self._rule_map.clear()
-        self._logger.debug("Parser state reset")
-
-    def _process_line(self, line: str) -> None:
-        """
-        Process a single line of QSS text using plugins.
-
-        Parameters
-        ----------
-        line : str
-            The line to process.
-        """
-        for plugin in self._plugins:
-            if plugin.process_line(line, self._state, self._variable_manager):
-                break
-
-    def check_format(self, qss_text: str) -> List[str]:
-        """
-        Validate the format of QSS text.
-
-        Parameters
-        ----------
-        qss_text : str
-            The QSS text to validate.
-
-        Returns
-        -------
-        List[str]
-            List of error messages.
-        """
-        errors = self._validator.check_format(qss_text)
-        for error in errors:
-            self.dispatch_error(error)
-        return errors
-
-    def get_styles_for(
-        self,
-        widget: WidgetProtocol,
-        fallback_class: Optional[str] = None,
-        additional_selectors: Optional[List[str]] = None,
-        include_class_if_object_name: bool = False,
-    ) -> str:
-        """
-        Retrieve QSS styles for a given widget.
-
-        Parameters
-        ----------
-        widget : WidgetProtocol
-            The widget to retrieve styles for.
-        fallback_class : Optional[str], optional
-            Fallback class to use if no styles are found, by default None.
-        additional_selectors : Optional[List[str]], optional
-            Additional selectors to include, by default None.
-        include_class_if_object_name : bool, optional
-            Whether to include class styles if an object name is present, by default False.
-
-        Returns
-        -------
-        str
-            The concatenated QSS styles for the widget.
-        """
-        return self._style_selector.get_styles_for(
-            self._state.rules,
-            widget,
-            fallback_class,
-            additional_selectors,
-            include_class_if_object_name,
-        )
-
-    def __repr__(self) -> str:
-        """Return a string representation of the parser."""
-        return self.to_string()
-
-    def to_string(self) -> str:
-        """
-        Return a string representation of the parser in standard QSS format.
-
-        Returns
-        -------
-        str
-            The formatted QSS string.
-        """
-        return "\n".join(
-            QSSFormatter.format_rule(rule.selector, rule.properties)
-            for rule in self._state.rules
-        )

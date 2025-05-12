@@ -6,8 +6,6 @@ from .qss_parser import (  # noqa: F401
     QSSPropertyDict,
     QSSRule,
     QSSStyleSelector,
-    QSSSyntaxChecker,
-    QSSValidator,
 )
 
 __version__ = "0.1.3"
