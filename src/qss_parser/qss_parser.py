@@ -309,9 +309,9 @@ class VariableManager:
                 error_msg = f"Circular variable reference detected: {var_name}"
                 self._logger.warning(error_msg)
                 errors.append(error_msg)
-                return match.group(0)  # Return original to avoid infinite loop
+                return match.group(0)
             if var_name not in self._variables:
-                return match.group(0)  # Return original for undefined variable
+                return match.group(0)
             visited.add(var_name)
             resolved_value = self._variables[var_name]
             nested_value = re.sub(
@@ -584,25 +584,48 @@ class DefaultPropertyProcessor:
         line_num : int
             Line number for error reporting.
         """
-        line = line.rstrip(";").strip()
+        line = line.strip()
         if not rules or not line:
             self._logger.debug(
                 f"Skipping empty property line or no rules on line {line_num}"
             )
             return
         parts = line.split(":", 1)
-        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+        if len(parts) != 2:
             self._logger.warning(f"Malformed property on line {line_num}: {line}")
             return
-        name, value = parts
-        resolved_value, error = variable_manager.resolve_variable(value.strip())
+        name = parts[0].strip()
+        value = parts[1].strip().rstrip(";").strip()
+        if not name or not value:
+            self._logger.warning(
+                f"Invalid property on line {line_num}: Empty name or value in '{line}'"
+            )
+            return
+        if not self._is_valid_property_name(name):
+            self._logger.warning(
+                f"Invalid property name on line {line_num}: '{name}' in '{line}'"
+            )
+            return
+        resolved_value, error = variable_manager.resolve_variable(value)
         if error:
             self._error_handler.dispatch_error(f"Error on line {line_num}: {error}")
-        normalized_line = f"{name.strip()}: {resolved_value};"
+        normalized_line = f"{name}: {resolved_value};"
         for rule in rules:
             rule.original += f"    {normalized_line}\n"
-            rule.add_property(name.strip(), resolved_value)
+            rule.add_property(name, resolved_value)
         self._logger.debug(f"Processed property on line {line_num}: {normalized_line}")
+
+    def _is_valid_property_name(self, name: str) -> bool:
+        """
+        Check if a property name is valid according to QSS conventions.
+
+        Args:
+            name: The property name to validate.
+
+        Returns:
+            bool: True if the property name is valid, else False.
+        """
+        return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
 
 
 # === Parser State and Validation ===
@@ -1370,6 +1393,7 @@ class SelectorPlugin(BaseQSSPlugin):
             return True
 
         if line.endswith("{") and not state.in_rule:
+            state.buffer = ""
             selector_part = line[:-1].strip()
             if selector_part:
                 normalized_selector = SelectorUtils.normalize_selector(selector_part)
@@ -1385,9 +1409,37 @@ class SelectorPlugin(BaseQSSPlugin):
             ]
             state.in_rule = True
             state.current_selectors = []
+            state.property_lines = []
             return True
 
         if line == "}" and state.in_rule:
+            if state.property_lines:
+                for prop_line in state.property_lines[:-1]:
+                    if not prop_line.strip().endswith(";"):
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line}: Property missing ';': {prop_line}"
+                        )
+                        continue
+                    self._property_processor.process_property(
+                        prop_line,
+                        state.current_rules,
+                        variable_manager,
+                        state.current_line,
+                    )
+                last_prop = state.property_lines[-1].strip()
+                if last_prop:
+                    parts = last_prop.split(":", 1)
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line}: Invalid last property: {last_prop}"
+                        )
+                    else:
+                        self._property_processor.process_property(
+                            last_prop + ";",
+                            state.current_rules,
+                            variable_manager,
+                            state.current_line,
+                        )
             for rule in state.current_rules:
                 rule.original += "}\n"
                 self._rule_handler.handle_rule(rule)
@@ -1395,6 +1447,7 @@ class SelectorPlugin(BaseQSSPlugin):
             state.in_rule = False
             state.current_selectors = []
             state.original_selector = None
+            state.property_lines = []
             return True
 
         return False
@@ -1474,7 +1527,7 @@ class PropertyPlugin(BaseQSSPlugin):
         self, line: str, state: ParserState, variable_manager: VariableManager
     ) -> bool:
         """
-        Process property-related lines within a rule.
+        Process property-related lines within a rule, requiring semicolons for all but the last property.
 
         Parameters
         ----------
@@ -1490,9 +1543,12 @@ class PropertyPlugin(BaseQSSPlugin):
         bool
             True if the line was handled, else False.
         """
-        return self._process_property_line(
-            line, state, self._property_processor, variable_manager
-        )
+        line = line.strip()
+        if not state.in_rule or state.in_comment or state.in_variables:
+            return False
+
+        state.property_lines.append(line)
+        return True
 
 
 class VariablePlugin(QSSParserPlugin):

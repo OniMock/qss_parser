@@ -198,3 +198,6 @@ dist/ build/ *.egg-info/
 
 #Qodo
 .qodo
+
+# Test
+src/test.py
