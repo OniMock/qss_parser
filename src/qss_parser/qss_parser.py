@@ -646,6 +646,7 @@ class ParserState:
         self.current_rules: List[QSSRule] = []
         self.variable_buffer: str = ""
         self.current_line: int = 1
+        self.property_lines: List[str] = []
 
     def reset(self) -> None:
         """Reset the parser state to initial values."""
@@ -659,6 +660,7 @@ class ParserState:
         self.current_rules = []
         self.variable_buffer = ""
         self.current_line = 1
+        self.property_lines = []
 
 
 class QSSSyntaxChecker:
@@ -724,7 +726,7 @@ class QSSSyntaxChecker:
                     else:
                         errors.extend(
                             self._validate_pending_properties(
-                                property_buffer, line_num - 1
+                                property_buffer, line_num - 1, is_last_rule=True
                             )
                         )
                         property_buffer = ""
@@ -741,7 +743,9 @@ class QSSSyntaxChecker:
                         )
                         continue
                     errors.extend(
-                        self._validate_pending_properties(property_buffer, line_num - 1)
+                        self._validate_pending_properties(
+                            property_buffer, line_num - 1, is_last_rule=False
+                        )
                     )
                     property_buffer = ""
                     new_errors, selector = self._validate_selector(line, line_num)
@@ -855,13 +859,19 @@ class QSSSyntaxChecker:
                                 f"Error on line {line_num}: Invalid property name: '{prop_name}'"
                             )
             last_part = prop_parts[-1].strip()
-            if last_part and not last_part.endswith(";"):
-                errors.append(
-                    f"Error on line {line_num}: Property missing ';': {last_part}"
-                )
-                if ":" in last_part and not last_part.endswith(":"):
+            if last_part:
+                if ":" not in last_part or last_part.endswith(":"):
+                    errors.append(
+                        f"Error on line {line_num}: Malformed last property: {last_part}"
+                    )
+                else:
                     prop_name = last_part.split(":", 1)[0].strip()
-                    if not self._is_valid_property_name(prop_name):
+                    prop_value = last_part.split(":", 1)[1].strip()
+                    if not prop_value:
+                        errors.append(
+                            f"Error on line {line_num}: Property missing value: {last_part}"
+                        )
+                    elif not self._is_valid_property_name(prop_name):
                         errors.append(
                             f"Error on line {line_num}: Invalid property name: '{prop_name}'"
                         )
@@ -945,7 +955,7 @@ class QSSSyntaxChecker:
         Returns:
             bool: True if the line is a valid property line, else False.
         """
-        return ":" in line and ";" in line and not line.startswith("@variables")
+        return ":" in line and not line.startswith("@variables")
 
     def _process_property_line(
         self, line: str, buffer: str, line_num: int
@@ -990,28 +1000,36 @@ class QSSSyntaxChecker:
             buffer = (buffer + " " + line).strip()
         return buffer, errors
 
-    def _validate_pending_properties(self, buffer: str, line_num: int) -> List[str]:
+    def _validate_pending_properties(
+        self, buffer: str, line_num: int, is_last_rule: bool
+    ) -> List[str]:
         """
         Validate pending properties in the buffer for missing semicolons and invalid property names.
 
         Args:
             buffer: The buffer containing pending properties.
             line_num: The line number for errors.
+            is_last_rule: Whether this is the last property of a rule (allows omitting semicolon).
 
         Returns:
             List[str]: List of error messages for invalid properties.
         """
         errors: List[str] = []
-        if buffer.strip() and not buffer.endswith(";"):
-            errors.append(
-                f"Error on line {line_num}: Property missing ';': {buffer.strip()}"
-            )
-            prop_name = (
-                buffer.split(":", 1)[0].strip() if ":" in buffer else buffer.strip()
-            )
-            if not self._is_valid_property_name(prop_name):
+        if buffer.strip():
+            parts = buffer.split(":", 1)
+            prop_name = parts[0].strip()
+            prop_value = parts[1].strip() if len(parts) > 1 else ""
+            if not prop_name or not prop_value:
+                errors.append(
+                    f"Error on line {line_num}: Malformed property: {buffer.strip()}"
+                )
+            elif not self._is_valid_property_name(prop_name):
                 errors.append(
                     f"Error on line {line_num}: Invalid property name: '{prop_name}'"
+                )
+            elif not is_last_rule and not buffer.endswith(";"):
+                errors.append(
+                    f"Error on line {line_num}: Property missing ';': {buffer.strip()}"
                 )
         return errors
 
@@ -1035,7 +1053,9 @@ class QSSSyntaxChecker:
             errors.append(
                 f"Error on line {last_line_num}: Unclosed brace '{{' for selector: {current_selector}"
             )
-        errors.extend(self._validate_pending_properties(buffer, last_line_num))
+        errors.extend(
+            self._validate_pending_properties(buffer, last_line_num, is_last_rule=True)
+        )
         return errors
 
 
@@ -1394,6 +1414,7 @@ class SelectorPlugin(BaseQSSPlugin):
 
         if line.endswith("{") and not state.in_rule:
             state.buffer = ""
+            state.property_lines = []
             selector_part = line[:-1].strip()
             if selector_part:
                 normalized_selector = SelectorUtils.normalize_selector(selector_part)
@@ -1409,23 +1430,33 @@ class SelectorPlugin(BaseQSSPlugin):
             ]
             state.in_rule = True
             state.current_selectors = []
-            state.property_lines = []
             return True
 
         if line == "}" and state.in_rule:
+            has_invalid_properties = False
+            valid_properties = False
             if state.property_lines:
-                for prop_line in state.property_lines[:-1]:
+                for i, prop_line in enumerate(state.property_lines[:-1]):
                     if not prop_line.strip().endswith(";"):
                         self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line}: Property missing ';': {prop_line}"
+                            f"Error on line {state.current_line - len(state.property_lines) + i}: Property missing ';': {prop_line}"
                         )
+                        has_invalid_properties = True
                         continue
-                    self._property_processor.process_property(
-                        prop_line,
-                        state.current_rules,
-                        variable_manager,
-                        state.current_line,
-                    )
+                    try:
+                        self._property_processor.process_property(
+                            prop_line,
+                            state.current_rules,
+                            variable_manager,
+                            state.current_line - len(state.property_lines) + i,
+                        )
+                        valid_properties = True
+                    except Exception as e:
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line - len(state.property_lines) + i}: Invalid property: {prop_line} ({str(e)})"
+                        )
+                        has_invalid_properties = True
+
                 last_prop = state.property_lines[-1].strip()
                 if last_prop:
                     parts = last_prop.split(":", 1)
@@ -1433,21 +1464,142 @@ class SelectorPlugin(BaseQSSPlugin):
                         self._error_handler.dispatch_error(
                             f"Error on line {state.current_line}: Invalid last property: {last_prop}"
                         )
+                        has_invalid_properties = True
                     else:
-                        self._property_processor.process_property(
-                            last_prop + ";",
-                            state.current_rules,
-                            variable_manager,
-                            state.current_line,
-                        )
-            for rule in state.current_rules:
-                rule.original += "}\n"
-                self._rule_handler.handle_rule(rule)
+                        try:
+                            self._property_processor.process_property(
+                                last_prop
+                                + (";" if not last_prop.endswith(";") else ""),
+                                state.current_rules,
+                                variable_manager,
+                                state.current_line,
+                            )
+                            valid_properties = True
+                        except Exception as e:
+                            self._error_handler.dispatch_error(
+                                f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
+                            )
+                            has_invalid_properties = True
+
+            if has_invalid_properties and not valid_properties:
+                invalid_content = f"{state.original_selector} {{\n"
+                invalid_content += "\n".join(
+                    f"    {line}" for line in state.property_lines
+                )
+                invalid_content += "\n}\n"
+                self._logger.warning(
+                    f"Skipping rule with invalid properties: {invalid_content}"
+                )
+                for handler in self._error_handler._event_handlers.get(
+                    "invalid_rule_skipped", []
+                ):
+                    handler(invalid_content)
+            else:
+                for rule in state.current_rules:
+                    if rule.properties:
+                        rule.original += "}\n"
+                        self._rule_handler.handle_rule(rule)
+
             state.current_rules = []
             state.in_rule = False
             state.current_selectors = []
             state.original_selector = None
             state.property_lines = []
+            state.buffer = ""
+            return True
+
+        if line.endswith("{") and state.in_rule:
+            self._error_handler.dispatch_error(
+                f"Error on line {state.current_line}: Unclosed brace '{{' for selector: {line}"
+            )
+            has_invalid_properties = False
+            valid_properties = False
+            if state.property_lines:
+                for i, prop_line in enumerate(state.property_lines[:-1]):
+                    if not prop_line.strip().endswith(";"):
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line - len(state.property_lines) + i}: Property missing ';': {prop_line}"
+                        )
+                        has_invalid_properties = True
+                        continue
+                    try:
+                        self._property_processor.process_property(
+                            prop_line,
+                            state.current_rules,
+                            variable_manager,
+                            state.current_line - len(state.property_lines) + i,
+                        )
+                        valid_properties = True
+                    except Exception as e:
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line - len(state.property_lines) + i}: Invalid property: {prop_line} ({str(e)})"
+                        )
+                        has_invalid_properties = True
+                last_prop = state.property_lines[-1].strip()
+                if last_prop:
+                    parts = last_prop.split(":", 1)
+                    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                        self._error_handler.dispatch_error(
+                            f"Error on line {state.current_line}: Invalid last property: {last_prop}"
+                        )
+                        has_invalid_properties = True
+                    else:
+                        try:
+                            self._property_processor.process_property(
+                                last_prop
+                                + (";" if not last_prop.endswith(";") else ""),
+                                state.current_rules,
+                                variable_manager,
+                                state.current_line,
+                            )
+                            valid_properties = True
+                        except Exception as e:
+                            self._error_handler.dispatch_error(
+                                f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
+                            )
+                            has_invalid_properties = True
+
+            if has_invalid_properties and not valid_properties:
+                invalid_content = f"{state.original_selector} {{\n"
+                invalid_content += "\n".join(
+                    f"    {line}" for line in state.property_lines
+                )
+                invalid_content += "\n}\n"
+                self._logger.warning(
+                    f"Skipping rule with invalid properties: {invalid_content}"
+                )
+                for handler in self._error_handler._event_handlers.get(
+                    "invalid_rule_skipped", []
+                ):
+                    handler(invalid_content)
+            else:
+                for rule in state.current_rules:
+                    if rule.properties:
+                        rule.original += "}\n"
+                        self._rule_handler.handle_rule(rule)
+
+            state.current_rules = []
+            state.in_rule = False
+            state.current_selectors = []
+            state.original_selector = None
+            state.property_lines = []
+            state.buffer = ""
+
+            selector_part = line[:-1].strip()
+            if selector_part:
+                normalized_selector = SelectorUtils.normalize_selector(selector_part)
+                selectors = [
+                    s.strip() for s in normalized_selector.split(",") if s.strip()
+                ]
+                state.current_selectors.extend(selectors)
+            if not state.current_selectors:
+                return True
+            state.original_selector = ", ".join(state.current_selectors)
+            state.current_rules = [
+                QSSRule(sel, original=f"{sel} {{\n") for sel in state.current_selectors
+            ]
+            state.in_rule = True
+            state.current_selectors = []
             return True
 
         return False
@@ -1483,23 +1635,58 @@ class SelectorPlugin(BaseQSSPlugin):
         state.current_rules = [
             QSSRule(sel, original=f"{sel} {{\n") for sel in selectors
         ]
+        has_invalid_properties = False
         if properties.strip():
-            prop_parts = properties.split(";")
-            for part in prop_parts:
-                part = part.strip()
-                if part:
+            prop_lines = [p.strip() for p in properties.split(";") if p.strip()]
+            for i, prop_line in enumerate(prop_lines[:-1]):
+                if not prop_line.endswith(";"):
+                    self._error_handler.dispatch_error(
+                        f"Error on line {state.current_line}: Property missing ';': {prop_line}"
+                    )
+                    has_invalid_properties = True
+                    continue
+                self._property_processor.process_property(
+                    prop_line,
+                    state.current_rules,
+                    variable_manager,
+                    state.current_line,
+                )
+            last_prop = prop_lines[-1].strip()
+            if last_prop:
+                parts = last_prop.split(":", 1)
+                if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                    self._error_handler.dispatch_error(
+                        f"Error on line {state.current_line}: Invalid last property: {last_prop}"
+                    )
+                    has_invalid_properties = True
+                else:
                     self._property_processor.process_property(
-                        part + ";",
+                        last_prop + (";" if not last_prop.endswith(";") else ""),
                         state.current_rules,
                         variable_manager,
                         state.current_line,
                     )
-        for rule in state.current_rules:
-            rule.original += "}\n"
-            self._rule_handler.handle_rule(rule)
+
+        if has_invalid_properties:
+            invalid_content = f"{state.original_selector} {{\n"
+            invalid_content += "\n".join(f"    {p}" for p in prop_lines)
+            invalid_content += "\n}\n"
+            self._logger.warning(
+                f"Skipping rule with invalid properties: {invalid_content}"
+            )
+            for handler in self._error_handler._event_handlers.get(
+                "invalid_rule_skipped", []
+            ):
+                handler(invalid_content)
+        else:
+            for rule in state.current_rules:
+                rule.original += "}\n"
+                self._rule_handler.handle_rule(rule)
+
         state.current_rules = []
         state.current_selectors = []
         state.original_selector = None
+        state.property_lines = []
 
 
 class PropertyPlugin(BaseQSSPlugin):
@@ -1527,7 +1714,7 @@ class PropertyPlugin(BaseQSSPlugin):
         self, line: str, state: ParserState, variable_manager: VariableManager
     ) -> bool:
         """
-        Process property-related lines within a rule, requiring semicolons for all but the last property.
+        Collect property-related lines within a rule for later processing.
 
         Parameters
         ----------
@@ -1541,13 +1728,15 @@ class PropertyPlugin(BaseQSSPlugin):
         Returns
         -------
         bool
-            True if the line was handled, else False.
+            True if the line was handled as a property, else False.
         """
         line = line.strip()
         if not state.in_rule or state.in_comment or state.in_variables:
             return False
-
-        state.property_lines.append(line)
+        if line.endswith("{") or line == "}":
+            return False
+        if line:
+            state.property_lines.append(line)
         return True
 
 

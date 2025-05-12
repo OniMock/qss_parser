@@ -119,6 +119,10 @@ class TestQSSParserValidation(unittest.TestCase):
             color:
             blue
         }
+        QPushButton {
+            color:
+            background
+        }
         """
         errors: List[str] = self.validator.check_format(qss)
         expected: List[str] = ["Error on line 4: Property missing ';': color: blue"]
@@ -2194,6 +2198,16 @@ class TestQSSParserEvents(unittest.TestCase):
         qss: str = """
         QPushButton {
             color: blue
+            background: white;
+        }
+        /* Valid */
+        QFrame {
+            color: blue;
+            background: white
+        }
+        /* Valid */
+        Widget {
+            color: blue
         }
         """
         self.parser.check_format(qss)
@@ -2227,11 +2241,19 @@ class TestQSSParserEvents(unittest.TestCase):
         qss: str = """
         QPushButton {
             color: blue
+            font-size: 12px;
+        }
+        QFrame {
+            color: blue;
+            background: white
+            font-size: 12px;
         }
         """
         self.parser.check_format(qss)
-        self.assertEqual(len(errors_found_1), 1, "First handler should capture error")
-        self.assertEqual(len(errors_found_2), 1, "Second handler should capture error")
+        self.assertEqual(len(errors_found_1), 2, "First handler should capture error")
+        self.assertEqual(len(errors_found_2), 2, "Second handler should capture error")
+        self.assertIn("Property missing ';'", errors_found_1[0])
+        self.assertIn("Property missing ';'", errors_found_1[1])
 
     def test_event_rule_added_with_pseudo(self) -> None:
         """
