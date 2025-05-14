@@ -1471,6 +1471,7 @@ class QSSParser:
             ":" in rule.selector
             and "::" not in rule.selector
             and "," not in rule.selector
+            and not re.search(r"\[[^\]]*:[^\]]*\]", rule.selector)
         ):
             base_rule = rule.clone_without_pseudo_elements()
             self._merge_or_add_rule(base_rule)

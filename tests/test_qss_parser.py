@@ -1474,6 +1474,32 @@ QPushButton {
             self.errors, [], "Valid qproperty QSS should produce no errors"
         )
 
+    def test_event_qproperty_defined(self) -> None:
+        """
+        Test the rule_added event for rules containing qproperty attributes.
+        """
+        rules_added: List[QSSRule] = []
+        self.parser.on(ParserEvent.RULE_ADDED, lambda rule: rules_added.append(rule))
+        self.parser.parse(self.qss)
+        print(rules_added)
+        print("Teste", self.parser.to_string())
+        self.assertEqual(
+            len(rules_added), 3, "Should trigger rule_added for each qproperty rule"
+        )
+        selectors: set = {rule.selector for rule in rules_added}
+        self.assertEqual(
+            selectors,
+            {
+                "QPushButton",
+                "#customButton",
+                '.iconButton[qproperty-icon="url(:/icons/test.png)"]',
+            },
+            "Should capture all selectors with qproperty attributes",
+        )
+        self.assertEqual(
+            self.errors, [], "Valid qproperty QSS should produce no errors"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
