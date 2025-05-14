@@ -2,11 +2,11 @@ import logging
 import os
 import sys
 import unittest
-from typing import List, Set
+from typing import List, Set, Tuple
 from unittest.mock import Mock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from qss_parser import QSSParser, QSSRule
+from qss_parser import ParserEvent, QSSParser, QSSRule
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -18,7 +18,7 @@ class TestQSSParserParsing(unittest.TestCase):
         """
         self.parser: QSSParser = QSSParser()
         self.errors: List[str] = []
-        self.parser.on("error_found", lambda error: self.errors.append(error))
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: self.errors.append(error))
         self.qss: str = """
         #myButton {
             color: red;
@@ -34,7 +34,7 @@ class TestQSSParserParsing(unittest.TestCase):
             background: lightgray;
         }
         QWidget {
-            font-size: 12px;
+            font-size:12px;
         }
         QFrame {
             border: 1px solid black;
@@ -499,7 +499,7 @@ class TestQSSParserStyleSelection(unittest.TestCase):
         """
         self.parser: QSSParser = QSSParser()
         self.errors: List[str] = []
-        self.parser.on("error_found", lambda error: self.errors.append(error))
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: self.errors.append(error))
         self.qss: str = """
         #myButton {
             color: red;
@@ -1016,7 +1016,7 @@ QFrame {
         """
         parser: QSSParser = QSSParser()
         errors: List[str] = []
-        parser.on("error_found", lambda error: errors.append(error))
+        parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
         qss: str = """
         #btn_save[selected="true"]:hover {
             border-left: 22px solid qlineargradient(spread:pad, x1:0.034, y1:0, x2:0.216, y2:0, stop:0.499 rgba(255, 121, 198, 255), stop:0.5 rgba(85, 170, 255, 0));
@@ -1047,7 +1047,7 @@ QFrame {
         """
         parser: QSSParser = QSSParser()
         errors: List[str] = []
-        parser.on("error_found", lambda error: errors.append(error))
+        parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
         qss: str = """
         @variables {
             --primary-color: #ff0000;
@@ -1084,7 +1084,7 @@ class TestQSSParserEvents(unittest.TestCase):
         """
         self.parser: QSSParser = QSSParser()
         self.errors: List[str] = []
-        self.parser.on("error_found", lambda error: self.errors.append(error))
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: self.errors.append(error))
         self.qss: str = """
         QPushButton {
             color: blue;
@@ -1099,7 +1099,7 @@ class TestQSSParserEvents(unittest.TestCase):
         Test the rule_added event.
         """
         rules_added: List[QSSRule] = []
-        self.parser.on("rule_added", lambda rule: rules_added.append(rule))
+        self.parser.on(ParserEvent.RULE_ADDED, lambda rule: rules_added.append(rule))
         self.parser.parse(self.qss)
         self.assertEqual(len(rules_added), 2, "Should trigger rule_added for each rule")
         selectors: Set[str] = {rule.selector for rule in rules_added}
@@ -1129,8 +1129,8 @@ class TestQSSParserEvents(unittest.TestCase):
         """
         rules_added_1: List[QSSRule] = []
         rules_added_2: List[QSSRule] = []
-        self.parser.on("rule_added", lambda rule: rules_added_1.append(rule))
-        self.parser.on("rule_added", lambda rule: rules_added_2.append(rule))
+        self.parser.on(ParserEvent.RULE_ADDED, lambda rule: rules_added_1.append(rule))
+        self.parser.on(ParserEvent.RULE_ADDED, lambda rule: rules_added_2.append(rule))
         self.parser.parse(self.qss)
         self.assertEqual(
             len(rules_added_1), 2, "First handler should capture all rules"
@@ -1146,8 +1146,12 @@ class TestQSSParserEvents(unittest.TestCase):
         """
         errors_found_1: List[str] = []
         errors_found_2: List[str] = []
-        self.parser.on("error_found", lambda error: errors_found_1.append(error))
-        self.parser.on("error_found", lambda error: errors_found_2.append(error))
+        self.parser.on(
+            ParserEvent.ERROR_FOUND, lambda error: errors_found_1.append(error)
+        )
+        self.parser.on(
+            ParserEvent.ERROR_FOUND, lambda error: errors_found_2.append(error)
+        )
         qss: str = """
         QPushButton {
             color: blue
@@ -1169,9 +1173,9 @@ class TestQSSParserEvents(unittest.TestCase):
         """
         Test the variable_defined event.
         """
-        variables_defined: List[tuple[str, str]] = []
+        variables_defined: List[Tuple[str, str]] = []
         self.parser.on(
-            "variable_defined",
+            ParserEvent.VARIABLE_DEFINED,
             lambda name, value: variables_defined.append((name, value)),
         )
         qss: str = """
@@ -1196,7 +1200,7 @@ class TestQSSParserEvents(unittest.TestCase):
             nonlocal parse_completed
             parse_completed = True
 
-        self.parser.on("parse_completed", on_parse_completed)
+        self.parser.on(ParserEvent.PARSE_COMPLETED, on_parse_completed)
         self.parser.parse(self.qss)
         self.assertTrue(parse_completed, "Should trigger parse_completed")
         self.assertEqual(self.errors, [], "Valid QSS should produce no errors")
@@ -1209,7 +1213,7 @@ class TestQSSParserToString(unittest.TestCase):
         """
         self.parser = QSSParser()
         self.errors: List[str] = []
-        self.parser.on("error_found", lambda error: self.errors.append(error))
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: self.errors.append(error))
 
     def test_to_string_simple_rule(self) -> None:
         """
