@@ -8,6 +8,7 @@ from typing import (
     Dict,
     Final,
     List,
+    Match,
     Optional,
     Pattern,
     Protocol,
@@ -426,7 +427,7 @@ class VariableManager:
         visited: Set[str] = set()
         errors: List[str] = []
 
-        def replace_var(match: re.Match[str]) -> str:
+        def replace_var(match: Match[str]) -> str:
             var_name = match.group(1)
             if var_name in visited:
                 error_msg = f"Circular variable reference detected: {var_name}"
