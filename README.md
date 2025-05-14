@@ -10,8 +10,9 @@
 ![Open Issues](https://img.shields.io/github/issues/OniMock/qss_parser)
 [![codecov](https://codecov.io/gh/OniMock/qss_parser/graph/badge.svg?token=BOYP3Y65CE)](https://codecov.io/gh/OniMock/qss_parser)
 
-<img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qss-parser.jpg" style="width:500px; height:auto; display:block; margin:auto;">
-<br>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qss-parser.jpg" width="500" />
+</p>
 **QSS Parser** is a lightweight, robust, and dependency-free Python library for parsing and validating Qt Style Sheets (QSS), the stylesheet language used to customize the appearance of Qt widgets. It enables developers to validate QSS syntax, parse styles into structured objects, and extract styles for specific Qt widgets based on object names, class names, attribute selectors, pseudo-states, and pseudo-elements. Ideal for PyQt or PySide applications, this library simplifies programmatic management of QSS styles.
 
 ## Table of Contents
@@ -408,7 +409,9 @@ For issues or questions:
 
 If you find QSS Parser helpful and want to support its development, consider making a donation via Web3 wallets. Your contributions help maintain and improve this open-source project! 🙏
 
-<img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/crypto_wallet.svg" style="width:130px; height:auto; display:block; margin:auto;">
+<p align="center">
+<img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/crypto_wallet.svg" width="150" />
+</p>
 
 | Blockchain                     | Address                                                          | QR Code                                                                                                                    |
 | ------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
