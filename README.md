@@ -9,6 +9,7 @@
 ![Wheel](https://img.shields.io/pypi/wheel/qss-parser)
 ![Open Issues](https://img.shields.io/github/issues/OniMock/qss_parser)
 [![codecov](https://codecov.io/gh/OniMock/qss_parser/graph/badge.svg?token=BOYP3Y65CE)](https://codecov.io/gh/OniMock/qss_parser)
+[![Documentation Status](https://readthedocs.org/projects/qss-parser/badge/?version=latest)](https://qss-parser.readthedocs.io/en/latest/?badge=latest)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qss-parser.jpg" width="500" />
