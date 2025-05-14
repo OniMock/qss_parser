@@ -47,7 +47,7 @@ testpaths = ["tests"]
 
 [tool.flake8]
 max-line-length = 88
-ignore = ["E203", "W503", "E501", "E302"]
+ignore = ["E203", "W503", "E501", "E302", "E704"]
 per-file-ignores = ["tests/*:E402"]
 
 [tool.isort]
