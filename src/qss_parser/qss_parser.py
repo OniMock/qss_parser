@@ -778,7 +778,10 @@ class DefaultPropertyProcessor:
         Returns:
             bool: True if the property name is valid, False otherwise.
         """
-        return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
+        if name.startswith("qproperty-"):
+            return bool(re.match(r"^qproperty-[a-zA-Z_][a-zA-Z0-9_-]*$", name))
+        else:
+            return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9-]*$", name))
 
 
 @dataclass

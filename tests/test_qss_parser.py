@@ -1313,5 +1313,167 @@ class TestQSSParserToString(unittest.TestCase):
         )
 
 
+class TestQSSParserQProperty(unittest.TestCase):
+    def setUp(self) -> None:
+        """
+        Set up the test environment for qproperty parsing tests.
+        """
+        self.parser: QSSParser = QSSParser()
+        self.errors: List[str] = []
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: self.errors.append(error))
+        self.qss: str = """
+        QPushButton {
+            qproperty-icon: url(:/icons/test.png);
+            qproperty-text: "Click Me";
+            color: blue;
+        }
+        #customButton {
+            qproperty-enabled: false;
+            background: gray;
+        }
+        .iconButton[qproperty-icon="url(:/icons/test.png)"] {
+            border: 1px solid black;
+        }
+        """
+
+    def test_parse_qproperty_attributes(self) -> None:
+        """
+        Test parsing QSS with valid qproperty attributes.
+        """
+        self.parser.parse(self.qss)
+        self.assertEqual(
+            len(self.parser._state.rules), 3, "Should parse all rules correctly"
+        )
+        self.assertEqual(
+            self.errors, [], "Valid qproperty QSS should produce no errors"
+        )
+
+        # Test QPushButton rule
+        push_button_rule: QSSRule = self.parser._state.rules[0]
+        self.assertEqual(push_button_rule.selector, "QPushButton")
+        self.assertEqual(len(push_button_rule.properties), 3)
+        self.assertEqual(push_button_rule.properties[0].name, "qproperty-icon")
+        self.assertEqual(push_button_rule.properties[0].value, "url(:/icons/test.png)")
+        self.assertEqual(push_button_rule.properties[1].name, "qproperty-text")
+        self.assertEqual(push_button_rule.properties[1].value, '"Click Me"')
+        self.assertEqual(push_button_rule.properties[2].name, "color")
+        self.assertEqual(push_button_rule.properties[2].value, "blue")
+
+        # Test #customButton rule
+        custom_button_rule: QSSRule = self.parser._state.rules[1]
+        self.assertEqual(custom_button_rule.selector, "#customButton")
+        self.assertEqual(len(custom_button_rule.properties), 2)
+        self.assertEqual(custom_button_rule.properties[0].name, "qproperty-enabled")
+        self.assertEqual(custom_button_rule.properties[0].value, "false")
+        self.assertEqual(custom_button_rule.properties[1].name, "background")
+        self.assertEqual(custom_button_rule.properties[1].value, "gray")
+
+        # Test .iconButton rule with qproperty in selector
+        icon_button_rule: QSSRule = self.parser._state.rules[2]
+        self.assertEqual(
+            icon_button_rule.selector,
+            '.iconButton[qproperty-icon="url(:/icons/test.png)"]',
+        )
+        self.assertEqual(len(icon_button_rule.properties), 1)
+        self.assertEqual(icon_button_rule.properties[0].name, "border")
+        self.assertEqual(icon_button_rule.properties[0].value, "1px solid black")
+        self.assertEqual(
+            icon_button_rule.attributes, ['[qproperty-icon="url(:/icons/test.png)"]']
+        )
+
+    def test_get_styles_for_qproperty(self) -> None:
+        """
+        Test style retrieval for a widget with qproperty attributes.
+        """
+        self.parser.parse(self.qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "customButton"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+
+        stylesheet: str = self.parser.get_styles_for(widget)
+        expected: str = """#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            self.errors, [], "Valid qproperty style retrieval should produce no errors"
+        )
+
+    def test_get_styles_for_qproperty_with_class_and_object_name(self) -> None:
+        """
+        Test style retrieval including class styles for a widget with qproperty attributes.
+        """
+        self.parser.parse(self.qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "customButton"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+
+        stylesheet: str = self.parser.get_styles_for(
+            widget, include_class_if_object_name=True
+        )
+        expected: str = """#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+QPushButton {
+    qproperty-icon: url(:/icons/test.png);
+    qproperty-text: "Click Me";
+    color: blue;
+}"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            self.errors, [], "Valid qproperty style retrieval should produce no errors"
+        )
+
+    def test_parse_invalid_qproperty_name(self) -> None:
+        """
+        Test parsing QSS with an invalid qproperty name.
+        """
+        qss: str = """
+        QPushButton {
+            qproperty-123invalid: true;
+            color: blue;
+        }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(
+            len(self.parser._state.rules), 1, "Should parse rule with valid properties"
+        )
+        rule: QSSRule = self.parser._state.rules[0]
+        self.assertEqual(len(rule.properties), 1, "Should skip invalid qproperty")
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "blue")
+        self.assertEqual(len(self.errors), 1, "Should report invalid qproperty name")
+        self.assertTrue(
+            "Invalid property name: 'qproperty-123invalid'" in self.errors[0]
+        )
+
+    def test_to_string_with_qproperty(self) -> None:
+        """
+        Test to_string() output for QSS rules with qproperty attributes.
+        """
+        self.parser.parse(self.qss)
+        expected: str = """QPushButton {
+    qproperty-icon: url(:/icons/test.png);
+    qproperty-text: "Click Me";
+    color: blue;
+}
+
+#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+
+.iconButton[qproperty-icon="url(:/icons/test.png)"] {
+    border: 1px solid black;
+}
+"""
+        self.assertEqual(self.parser.to_string(), expected)
+        self.assertEqual(
+            self.errors, [], "Valid qproperty QSS should produce no errors"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
