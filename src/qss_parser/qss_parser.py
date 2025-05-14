@@ -3,13 +3,13 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from re import Pattern
 from typing import (
     Callable,
     Dict,
     Final,
     List,
     Optional,
+    Pattern,
     Protocol,
     Set,
     Tuple,
