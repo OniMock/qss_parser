@@ -97,6 +97,25 @@ jobs:
       - name: Update versions
         run: python update_version.py ${{ env.VERSION }}
 
+      - name: Clean documentation build
+        run: |
+          rm -rf docs/build/html
+        if: always()
+
+      - name: Build documentation
+        run: |
+          cd docs
+          make html
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: docs/build/html/
+          retention-days: 7
+
       - name: Generate release notes
         id: generate_notes
         run: |
