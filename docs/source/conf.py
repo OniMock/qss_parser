@@ -25,8 +25,8 @@ def get_version():
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 full_version = get_version()
-version = ".".join(full_version.split(".")[:2])
-release = full_version
+version = str(".".join(full_version.split(".")[:2]))
+release = str(full_version)
 
 project = "QSS Parser"
 copyright = "2025, OniMock"
