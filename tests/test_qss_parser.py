@@ -294,22 +294,28 @@ class TestQSSParserParsing(unittest.TestCase):
         Test parsing QSS with multiple selectors including pseudo-_states.
         """
         qss: str = """
-        #myButton:hover, QFrame:disabled {
+        #myButton:hover, QFrame:disabled, #secondButton QPushButton, #anyButton QCheckBox::drop-down:disabled {
             color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
         }
         """
         self.parser.parse(qss)
         self.assertEqual(
             len(self.parser._state.rules),
-            0,
-            "Pseudo-states in comma-separated selectors should be rejected",
+            4,
+            "Pseudo-states in comma-separated selectors should accept",
+        )
+        self.assertEqual(
+            len(self.parser._state.rules[0].properties),
+            4,
+            "Pseudo-states in comma-separated selectors should accept",
         )
         self.assertEqual(
             self.errors,
-            [
-                "Error: Pseudo-states in comma-separated selectors are not supported. Split into separate rules for #myButton:hover, QFrame:disabled"
-            ],
-            "Should report pseudo-state error",
+            [],
+            "Should not report pseudo-state error",
         )
 
     def test_parse_attribute_selector_complex(self) -> None:
@@ -537,6 +543,94 @@ class TestQSSParserParsing(unittest.TestCase):
         self.assertEqual(rule.properties[2].value, "14px")
         self.assertEqual(rule.properties[3].name, "color")
         self.assertEqual(rule.properties[3].value, "#ffffff")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_parsing_multiple_selectors_separate_with_comma_in_single_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test parsing QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover, QFrame:disabled,  #secondButton QPushButton, #anyButton QCheckBox::drop-down:disabled {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(self.parser._state.rules), 4, "Should parse 4 rule")
+        rule = self.parser._state.rules[3]
+        self.assertEqual(rule.selector, "#anyButton QCheckBox::drop-down:disabled")
+        self.assertEqual(rule.pseudo_states[0], "disabled", "Should have pseudo-state")
+        self.assertEqual(len(rule.properties), 4, "Should parse all four properties")
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "red")
+        self.assertEqual(rule.properties[1].name, "width")
+        self.assertEqual(rule.properties[1].value, "15px")
+        self.assertEqual(rule.properties[2].name, "height")
+        self.assertEqual(rule.properties[2].value, "15px")
+        self.assertEqual(rule.properties[3].name, "border-radius")
+        self.assertEqual(rule.properties[3].value, "10px")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_parsing_multiple_selectors_separate_with_comma_all_single_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test parsing QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover, QFrame:disabled,  #secondButton QPushButton, #anyButton QCheckBox::drop-down:disabled { color: red; width: 15px; height: 15px; border-radius: 10px;}
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(self.parser._state.rules), 4, "Should parse 4 rule")
+        rule = self.parser._state.rules[3]
+        self.assertEqual(rule.selector, "#anyButton QCheckBox::drop-down:disabled")
+        self.assertEqual(rule.pseudo_states[0], "disabled", "Should have pseudo-state")
+        self.assertEqual(len(rule.properties), 4, "Should parse all four properties")
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "red")
+        self.assertEqual(rule.properties[1].name, "width")
+        self.assertEqual(rule.properties[1].value, "15px")
+        self.assertEqual(rule.properties[2].name, "height")
+        self.assertEqual(rule.properties[2].value, "15px")
+        self.assertEqual(rule.properties[3].name, "border-radius")
+        self.assertEqual(rule.properties[3].value, "10px")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_parsing_multiple_selectors_separate_with_comma_in_each_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test parsing QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover,
+        QFrame:disabled,
+        #secondButton QPushButton,
+        #anyButton QCheckBox::drop-down:disabled {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(self.parser._state.rules), 4, "Should parse 4 rule")
+        rule = self.parser._state.rules[3]
+        self.assertEqual(rule.selector, "#anyButton QCheckBox::drop-down:disabled")
+        self.assertEqual(rule.pseudo_states[0], "disabled", "Should have pseudo-state")
+        self.assertEqual(len(rule.properties), 4, "Should parse all four properties")
+        self.assertEqual(rule.properties[0].name, "color")
+        self.assertEqual(rule.properties[0].value, "red")
+        self.assertEqual(rule.properties[1].name, "width")
+        self.assertEqual(rule.properties[1].value, "15px")
+        self.assertEqual(rule.properties[2].name, "height")
+        self.assertEqual(rule.properties[2].value, "15px")
+        self.assertEqual(rule.properties[3].name, "border-radius")
+        self.assertEqual(rule.properties[3].value, "10px")
         self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
 
 
@@ -1181,6 +1275,79 @@ QFrame {
             errors, [], "Valid variables and properties should produce no errors"
         )
 
+    def test_get_style_for_multiple_selectors_separate_with_comma_in_single_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test get_style_for QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover, QFrame:disabled, #secondButton QPushButton, #anyButton QCheckBox::drop-down:disabled {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        """
+        errors: List[str] = []
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
+        self.parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "anyButton"
+        widget.metaObject.return_value.className.return_value = "QCheckBox"
+        stylesheet: str = self.parser.get_styles_for(widget)
+        expected: str = """#anyButton QCheckBox::drop-down:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            errors,
+            [],
+            "Valid selector and pseudo elements/states in separate comma should produce no errors",
+        )
+
+    def test_get_style_for_multiple_selectors_separate_with_comma_in_each_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test get_style_for QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover,
+        QFrame:disabled, 
+        #secondButton QPushButton,
+        #anyButton QCheckBox::drop-down:disabled {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        """
+        errors: List[str] = []
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
+        self.parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "anyButton"
+        widget.metaObject.return_value.className.return_value = "QCheckBox"
+        stylesheet: str = self.parser.get_styles_for(widget)
+        expected: str = """#anyButton QCheckBox::drop-down:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            errors,
+            [],
+            "Valid selector and pseudo elements/states in separate comma should produce no errors",
+        )
+
 
 class TestQSSParserEvents(unittest.TestCase):
     def setUp(self) -> None:
@@ -1458,6 +1625,96 @@ class TestQSSParserToString(unittest.TestCase):
         self.assertEqual(
             self.errors, [], "Valid variables and properties should produce no errors"
         )
+
+    def test_to_string_multiple_selectors_separate_with_comma_all_single_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test to_string QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover, QFrame:disabled,  #secondButton QPushButton, #anyButton QCheckBox::drop-down:disabled { color: red; width: 15px; height: 15px; border-radius: 10px;}
+        """
+        self.parser.parse(qss)
+        expected = """#myButton:hover {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+QFrame:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#anyButton QCheckBox::drop-down:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+"""
+        self.assertEqual(self.parser.to_string().strip(), expected.strip())
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_parsing_multiple_selectors_separate_with_comma_in_each_line_with_pseudo_state(
+        self,
+    ) -> None:
+        """
+        Test parsing QSS with multiple selectors including pseudo-_states.
+        """
+        qss: str = """
+        #myButton:hover,
+        QFrame:disabled,
+        #secondButton QPushButton,
+        #anyButton QCheckBox::drop-down:disabled {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        """
+        self.parser.parse(qss)
+        expected = """#myButton:hover {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+QFrame:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#anyButton QCheckBox::drop-down:disabled {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+"""
+        self.assertEqual(self.parser.to_string().strip(), expected.strip())
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
 
 
 class TestQSSParserQProperty(unittest.TestCase):

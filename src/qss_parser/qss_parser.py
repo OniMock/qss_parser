@@ -599,12 +599,6 @@ class SelectorUtils:
                         f"Error on line {line_num}: Duplicate selector '{sel}' in comma-separated list"
                     )
                 seen_selectors.add(sel)
-                if ":" in sel and not sel.endswith(":"):
-                    errors.append(
-                        f"Error: Pseudo-states in comma-separated selectors are not supported. "
-                        f"Split into separate rules for {selector}"
-                    )
-                    return errors
 
         for sel in selectors:
             attributes = SelectorUtils.extract_attributes(sel)
@@ -1204,7 +1198,7 @@ class SelectorPlugin(BaseQSSPlugin):
                     continue
                 try:
                     self._property_processor.process_property(
-                        prop_line + ";",
+                        prop_line + (";" if not prop_line.endswith(";") else ""),
                         state.current_rules,
                         variable_manager,
                         state.current_line,
