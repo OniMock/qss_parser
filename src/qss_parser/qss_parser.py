@@ -84,6 +84,8 @@ class Constants:
         "::title",
         "::up-arrow",
         "::up-button",
+        "::horizontalHeader",  # SUBWIDGET (SubControl) - Refactor in future
+        "::verticalHeader",  # SUBWIDGET (SubControl) - Refactor in future
     ]
     PSEUDO_STATES: Final[List[str]] = [
         ":active",
