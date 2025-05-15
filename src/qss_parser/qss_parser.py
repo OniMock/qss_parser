@@ -1182,7 +1182,7 @@ class SelectorPlugin(BaseQSSPlugin):
             if any("Duplicate selector" in error for error in errors):
                 seen_selectors = set()
                 unique_selectors = []
-                for sel in state.current_selectors:
+                for sel in selectors:
                     if sel not in seen_selectors:
                         seen_selectors.add(sel)
                         unique_selectors.append(sel)
@@ -1197,15 +1197,12 @@ class SelectorPlugin(BaseQSSPlugin):
         state.current_rules = [QSSRule(sel) for sel in selectors]
         if properties.strip():
             prop_lines = [p.strip() for p in properties.split(";") if p.strip()]
-            for i, prop_line in enumerate(prop_lines[:-1]):
-                if not prop_line.endswith(";"):
-                    self._error_handler.dispatch_error(
-                        f"Error on line {state.current_line}: Property missing ';': {prop_line}"
-                    )
+            for i, prop_line in enumerate(prop_lines):
+                if not prop_line:
                     continue
                 try:
                     self._property_processor.process_property(
-                        prop_line,
+                        prop_line + ";",
                         state.current_rules,
                         variable_manager,
                         state.current_line,
@@ -1214,25 +1211,6 @@ class SelectorPlugin(BaseQSSPlugin):
                     self._error_handler.dispatch_error(
                         f"Error on line {state.current_line}: Invalid property: {prop_line} ({str(e)})"
                     )
-            last_prop = prop_lines[-1].strip()
-            if last_prop:
-                parts = last_prop.split(":", 1)
-                if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
-                    self._error_handler.dispatch_error(
-                        f"Error on line {state.current_line}: Invalid last property: {last_prop}"
-                    )
-                else:
-                    try:
-                        self._property_processor.process_property(
-                            last_prop + (";" if not last_prop.endswith(";") else ""),
-                            state.current_rules,
-                            variable_manager,
-                            state.current_line,
-                        )
-                    except Exception as e:
-                        self._error_handler.dispatch_error(
-                            f"Error on line {state.current_line}: Invalid last property: {last_prop} ({str(e)})"
-                        )
 
         for rule in state.current_rules:
             if rule.properties:

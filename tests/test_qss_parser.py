@@ -491,6 +491,54 @@ class TestQSSParserParsing(unittest.TestCase):
         )
         self.assertEqual(self.parser.to_string(), "", "Should return empty string")
 
+    def test_parse_variables_block_single_line(self) -> None:
+        """
+        Test parsing a single-line QSS rule with multiple properties and variables.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --border-radius: 14px;
+        }
+        #extraCloseColumnBtn { background-color: rgba(248, 248, 242, 0); border: none; border-radius: var(--border-radius); color: var(--primary-color); }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(self.parser._state.rules), 1, "Should parse one rule")
+        rule = self.parser._state.rules[0]
+        self.assertEqual(rule.selector, "#extraCloseColumnBtn")
+        self.assertEqual(len(rule.properties), 4, "Should parse all four properties")
+        self.assertEqual(rule.properties[0].name, "background-color")
+        self.assertEqual(rule.properties[0].value, "rgba(248, 248, 242, 0)")
+        self.assertEqual(rule.properties[1].name, "border")
+        self.assertEqual(rule.properties[1].value, "none")
+        self.assertEqual(rule.properties[2].name, "border-radius")
+        self.assertEqual(rule.properties[2].value, "14px")
+        self.assertEqual(rule.properties[3].name, "color")
+        self.assertEqual(rule.properties[3].value, "#ffffff")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_parse_single_line_multiple_properties(self) -> None:
+        """
+        Test parsing a single-line QSS rule with multiple properties.
+        """
+        qss = """
+        #extraCloseColumnBtn { background-color: rgba(248, 248, 242, 0); border: none; border-radius: 14px; color: #ffffff; }
+        """
+        self.parser.parse(qss)
+        self.assertEqual(len(self.parser._state.rules), 1, "Should parse one rule")
+        rule = self.parser._state.rules[0]
+        self.assertEqual(rule.selector, "#extraCloseColumnBtn")
+        self.assertEqual(len(rule.properties), 4, "Should parse all four properties")
+        self.assertEqual(rule.properties[0].name, "background-color")
+        self.assertEqual(rule.properties[0].value, "rgba(248, 248, 242, 0)")
+        self.assertEqual(rule.properties[1].name, "border")
+        self.assertEqual(rule.properties[1].value, "none")
+        self.assertEqual(rule.properties[2].name, "border-radius")
+        self.assertEqual(rule.properties[2].value, "14px")
+        self.assertEqual(rule.properties[3].name, "color")
+        self.assertEqual(rule.properties[3].value, "#ffffff")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
 
 class TestQSSParserStyleSelection(unittest.TestCase):
     def setUp(self) -> None:
@@ -1076,6 +1124,63 @@ QFrame {
             errors, [], "Valid variables and properties should produce no errors"
         )
 
+    def test_get_styles_for_variables_block_single_line(self) -> None:
+        """
+        Test get style for a single-line QSS rule with multiple properties and variables.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --border-radius: 14px;
+        }
+        #extraCloseColumnBtn QPushButton { background-color: rgba(248, 248, 242, 0); border: none; border-radius: var(--border-radius); color: var(--primary-color); }
+        """
+        errors: List[str] = []
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
+        self.parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "extraCloseColumnBtn"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = self.parser.get_styles_for(widget)
+
+        expected: str = """#extraCloseColumnBtn QPushButton {
+    background-color: rgba(248, 248, 242, 0);
+    border: none;
+    border-radius: 14px;
+    color: #ffffff;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            errors, [], "Valid variables and properties should produce no errors"
+        )
+
+    def test_get_styles_for_single_line_multiple_properties(self) -> None:
+        """
+        Test get style for a single-line QSS rule with multiple properties.
+        """
+        qss = """
+        #extraCloseColumnBtn, QLabel { background-color: rgba(248, 248, 242, 0); border: none; border-radius: 14px; color: #ffffff; }
+        """
+        errors: List[str] = []
+        self.parser.on(ParserEvent.ERROR_FOUND, lambda error: errors.append(error))
+        self.parser.parse(qss)
+        widget: Mock = Mock()
+        widget.objectName.return_value = "extraCloseColumnBtn"
+        widget.metaObject.return_value.className.return_value = "QPushButton"
+        stylesheet: str = self.parser.get_styles_for(widget)
+        expected: str = """#extraCloseColumnBtn {
+    background-color: rgba(248, 248, 242, 0);
+    border: none;
+    border-radius: 14px;
+    color: #ffffff;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(
+            errors, [], "Valid variables and properties should produce no errors"
+        )
+
 
 class TestQSSParserEvents(unittest.TestCase):
     def setUp(self) -> None:
@@ -1310,6 +1415,48 @@ class TestQSSParserToString(unittest.TestCase):
                 "Space not allowed before attribute selector '[data-value=\"nested\"]'"
             ],
             "Invalid attribute selector should produce error",
+        )
+
+    def test_to_string_for_variables_block_single_line(self) -> None:
+        """
+        Test to_string a single-line QSS rule with multiple properties and variables.
+        """
+        qss: str = """
+        @variables {
+            --primary-color: #ffffff;
+            --border-radius: 14px;
+        }
+        #extraCloseColumnBtn QPushButton { background-color: rgba(248, 248, 242, 0); border: none; border-radius: var(--border-radius); color: var(--primary-color); }
+        """
+        self.parser.parse(qss)
+        expected: str = """#extraCloseColumnBtn QPushButton {
+    background-color: rgba(248, 248, 242, 0);
+    border: none;
+    border-radius: 14px;
+    color: #ffffff;
+}
+"""
+        self.assertEqual(self.parser.to_string(), expected, "Should to string")
+        self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
+
+    def test_to_string_for_single_line_multiple_properties(self) -> None:
+        """
+        Test to_string a single-line QSS rule with multiple properties.
+        """
+        qss = """
+        #extraCloseColumnBtn { background-color: rgba(248, 248, 242, 0); border: none; border-radius: 14px; color: #ffffff; }
+        """
+        self.parser.parse(qss)
+        expected: str = """#extraCloseColumnBtn {
+    background-color: rgba(248, 248, 242, 0);
+    border: none;
+    border-radius: 14px;
+    color: #ffffff;
+}
+"""
+        self.assertEqual(self.parser.to_string().strip(), expected.strip())
+        self.assertEqual(
+            self.errors, [], "Valid variables and properties should produce no errors"
         )
 
 
