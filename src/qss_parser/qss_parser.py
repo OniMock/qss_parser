@@ -43,7 +43,7 @@ class Constants:
     COMPILED_ATTRIBUTE_PATTERN: Final[Pattern[str]] = re.compile(ATTRIBUTE_PATTERN)
     VARIABLE_PATTERN: Final[str] = r"var\((--[\w-]+)\)"
     COMPLETE_RULE_PATTERN: Final[str] = r"^\s*[^/][^{}]*\s*\{[^}]*\}\s*$"
-    PSEUDO_PATTERN: Final[str] = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*(\w+)"
+    PSEUDO_PATTERN: Final[str] = r"(\w+|#[-\w]+|\[.*?\])\s*(:{1,2})\s*([-\w]+)"
     CLASS_ID_PATTERN: Final[str] = r"(\w+)(#[-\w]+)"
     COMBINATOR_PATTERN: Final[str] = (
         r"(\w+|#[-\w]+|\[.*?\])([> ]{1,2})(\w+|#[-\w]+|\[.*?\])"
