@@ -1,3 +1,57 @@
+## [0.2.0] - 2025-05-14
+
+qss-parser v0.2.0
+
+### Overview
+Version 0.2.0 of qss-parser.
+
+## Changes
+- Update: github action to automatize build for docs ([295c205](https://github.com/OniMock/qss_parser/commit/295c2059f6e04d36e8aab06f281a8f50fb67398f))
+- Update: conf.py to get version from pyproject.toml ([1ef2a3f](https://github.com/OniMock/qss_parser/commit/1ef2a3fda9a097105ecccfd0592eedc9f700579d))
+- Update: read docs parameters ([3d316c1](https://github.com/OniMock/qss_parser/commit/3d316c1087407aa9294028ed4a3d442741a7be68))
+- Add: badge for read docs ([482a0eb](https://github.com/OniMock/qss_parser/commit/482a0eb11f7cf60c1bb2d1a20431769ee7c2db3e))
+- Fix: sphinx version to python 3.8 ([92a0ff5](https://github.com/OniMock/qss_parser/commit/92a0ff56f882e99ba5cb82b93727bcb3661e10ca))
+- Fix: path to conf.py ([d4bfa9a](https://github.com/OniMock/qss_parser/commit/d4bfa9af508d53796ebd5dc0c61aed571692c19d))
+- Remove: from read docs obsolete system package ([ebb25d1](https://github.com/OniMock/qss_parser/commit/ebb25d1853cccf800b9ccc3c46bbc13b46dc2bd4))
+- Add: yaml to readdocs ([2a05edf](https://github.com/OniMock/qss_parser/commit/2a05edfd7200252ce11e8f37adcff73cb68cac01))
+- Add: docs with Sphinx ([c6065da](https://github.com/OniMock/qss_parser/commit/c6065dab6894b996acd8d9ba43f47d688f4cce75))
+- Fix: 'type' object is not subscriptable ([b3e435f](https://github.com/OniMock/qss_parser/commit/b3e435f95da1c93a5fae23612d8e002c77e5b163))
+- Fix: Pattern import for python <3.8 ([dfdf50a](https://github.com/OniMock/qss_parser/commit/dfdf50ab12420dfdf4a5e6586f98913aa2b4515c))
+- Refactor: to pass in flake8 ([e20ce5c](https://github.com/OniMock/qss_parser/commit/e20ce5c3b7d28232839967b3e8438fad41fee5b9))
+- Refactor: reorganize, refactor, separate responsibilities, and optimize code ([3e9de76](https://github.com/OniMock/qss_parser/commit/3e9de76cb85da0511dae2c6c2f148f9fcf666b25))
+- Refactor: explicit imports in all ([d84da26](https://github.com/OniMock/qss_parser/commit/d84da2628c1a882f52bb3edf6d9ae24da20bfbca))
+- Fix: readme.md image align ([1453cf7](https://github.com/OniMock/qss_parser/commit/1453cf73637e46a23255408551e6763908671453))
+- Add: new tests to check pseudo-state and pseudo-element ([82b178d](https://github.com/OniMock/qss_parser/commit/82b178d9ac7584643e12083554a0b0c5765dadee))
+- Update: example to refactored code ([5589dc3](https://github.com/OniMock/qss_parser/commit/5589dc3618de51d577c08466d6b2d7df9aff3cf8))
+- Update: readme.md with refactored code ([491fedc](https://github.com/OniMock/qss_parser/commit/491fedcf26b288d72c7784cd23210de8db20c3fc))
+- Update: ignore flake ([60a64d0](https://github.com/OniMock/qss_parser/commit/60a64d0ccfeb9c3464692a36b6b7b1df6235457d))
+- Fix: QSSParser to handle undefined variables, class-ID selectors, and invalid attribute selector spacing ([8f6895a](https://github.com/OniMock/qss_parser/commit/8f6895a621bc52da6b802807d057b9f7cfe17192))
+- Fix: false error on syntax ([49ee3f3](https://github.com/OniMock/qss_parser/commit/49ee3f3b10d5f83f751f07998a93d457b90abd45))
+- Fix invalid property handling and semicolon validation in QSS parser ([a67263b](https://github.com/OniMock/qss_parser/commit/a67263b7259281182a3e4a85c428a1298c3f2197))
+- Add: tests for get_styles_for edge cases ([76059d3](https://github.com/OniMock/qss_parser/commit/76059d3026bbe814ed56818c1f59b53e0c7fec1e))
+- Fix: circular variable reference error reporting in VariableManager and QSSParser ([02009f2](https://github.com/OniMock/qss_parser/commit/02009f2f8d16d89d921b7071c8d480a75c4bbe36))
+- Add: validation for invalid/duplicate selectors and invalid property names in QSSSyntaxChecker ([c1fa400](https://github.com/OniMock/qss_parser/commit/c1fa400235dd9b67547f427cd8940e9bf3130320))
+- Add: support for invalid_rule_skipped event in QSSParser ([a103b4a](https://github.com/OniMock/qss_parser/commit/a103b4a9ebf02bbd547a7f766c4e0d6bb4231bc2))
+- Add: support for parse_completed event in QSSParser ([6cea6a2](https://github.com/OniMock/qss_parser/commit/6cea6a263dfb19c90ae6778d17581053cec291b3))
+- Add: support for variable_defined event in QSSParser and VariableManager ([f554897](https://github.com/OniMock/qss_parser/commit/f554897097d8a49e572a948783b00cac2484154e))
+- Refactor: to organization and best performance ([3cdc287](https://github.com/OniMock/qss_parser/commit/3cdc2871b85f68224bf63b04a7010a1bd120cc12))
+- Remove: blank spaces ([74c3bbb](https://github.com/OniMock/qss_parser/commit/74c3bbbd8c20fceb9a69749d812851185cf363c6))
+- Implementing: parse to string in same qss format ([cfd52c7](https://github.com/OniMock/qss_parser/commit/cfd52c79dfb8633cc68fc63eba3f8d5902cd78db))
+- Add: test for get the correctly format in to_string ([2ccaca1](https://github.com/OniMock/qss_parser/commit/2ccaca19755cc404c55607f65117c1f2c5832cac))
+- Update: selector separate by commas and line are valid. ([fdfa416](https://github.com/OniMock/qss_parser/commit/fdfa41641225f765eb04237d1f3b8e97b3720d97))
+- Update: selector separate by commas and line are valid. ([7def77e](https://github.com/OniMock/qss_parser/commit/7def77e030d8046cb57eeddad2712ffe984cc2cf))
+- Add: check for invalid spaces ([6853907](https://github.com/OniMock/qss_parser/commit/685390773ffd51a283f77d16a9a0fddbbfad429b))
+- Add: check for invalid spaces ([eef4d05](https://github.com/OniMock/qss_parser/commit/eef4d0514ced761e04682c6f73c6607c2e28d949))
+- Fix: duplicate properties get the last value ([7093f28](https://github.com/OniMock/qss_parser/commit/7093f28622cdfff99b6cc99aa3469eeb7401500b))
+- Fix: duplicate with pseudo_elements and overrides properties ([8ac31b9](https://github.com/OniMock/qss_parser/commit/8ac31b9a5947c12090f192aee4c8acb74ae085d5))
+- Refactor: remove redundant and keep organization ([638c214](https://github.com/OniMock/qss_parser/commit/638c21409774336e4f50492a7aefa86239fa5961))
+## Installation
+```bash
+pip install qss-parser==0.2.0
+```
+
+See the [README.md](README.md) for more details.
+
 ## [0.1.3] - 2025-05-09
 
 qss-parser v0.1.3
