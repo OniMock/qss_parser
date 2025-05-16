@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import unittest
-from typing import List, Set, Tuple
+from typing import Any, List, Set, Tuple
 from unittest.mock import Mock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -1317,7 +1317,7 @@ QFrame {
         """
         qss: str = """
         #myButton:hover,
-        QFrame:disabled, 
+        QFrame:disabled,
         #secondButton QPushButton,
         #anyButton QCheckBox::drop-down:disabled {
             color: red;
@@ -1777,7 +1777,7 @@ QFrame:disabled {
             height: 15px;
             border-radius: 10px;
         }
-        /* Another comment 
+        /* Another comment
         more comment*/
         #customButton {
             qproperty-enabled: false;
@@ -1809,6 +1809,124 @@ QFrame:disabled {
         )
         self.assertEqual(self.errors, [], "Comments-only QSS should produce no errors")
 
+    def test_to_string_comments_in_single_line_inside_selector(self) -> None:
+        """
+        Test parsing QSS with comments in single and multi-line formats inside and outside selectors,
+        ensuring rules are correctly parsed and comments are excluded from output.
+        """
+        self.maxDiff = None
+        qss: str = """
+        /* This is valid but not include on parsing */
+        /* Another comment
+        This is valid but not include on parsing
+        */
+        #secondButton QPushButton {     /* This is valid but not include on parsing */
+            color: red;
+            width: 15px; /*This is valid but not include on parsing */
+            height: 15px;
+            border-radius: 10px;
+            /*comment here */
+        }
+        /*This is valid but not include on parsing*/
+        #customButton {
+            qproperty-enabled: false;
+            background: gray;
+        } /*This is valid but not include on parsing*/
+        /*more comment */
+        """
+        expected = """#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+"""
+        self.parser.parse(qss)
+        self.assertEqual(
+            len(self.parser._state.rules),
+            2,
+            "QSS with comments should result in two rules",
+        )
+        rules_1 = self.parser._state.rules[0]
+        rules_2 = self.parser._state.rules[1]
+        self.assertEqual(
+            rules_1.class_name,
+            "QPushButton",
+            "Expected className for first rule to be QPushButton",
+        )
+        self.assertEqual(
+            rules_1.object_name,
+            "secondButton",
+            "Expected objectName for first rule to be secondButton",
+        )
+        self.assertEqual(
+            rules_2.class_name,
+            None,
+            "Expected className for second rule to be None",
+        )
+        self.assertEqual(
+            rules_2.object_name,
+            "customButton",
+            "Expected objectName for second rule to be customButton",
+        )
+        self.assertEqual(
+            len(rules_1.properties),
+            4,
+            "Expected 4 properties for first rule",
+        )
+        self.assertEqual(
+            len(rules_2.properties),
+            2,
+            "Expected 2 properties for second rule",
+        )
+        # Assertions for all properties of first rule
+        self.assertEqual(
+            f"{rules_1.properties[0].name}: {rules_1.properties[0].value}",
+            "color: red",
+            "Expected first property of first rule to be 'color: red'",
+        )
+        self.assertEqual(
+            f"{rules_1.properties[1].name}: {rules_1.properties[1].value}",
+            "width: 15px",
+            "Expected second property of first rule to be 'width: 15px'",
+        )
+        self.assertEqual(
+            f"{rules_1.properties[2].name}: {rules_1.properties[2].value}",
+            "height: 15px",
+            "Expected third property of first rule to be 'height: 15px'",
+        )
+        self.assertEqual(
+            f"{rules_1.properties[3].name}: {rules_1.properties[3].value}",
+            "border-radius: 10px",
+            "Expected fourth property of first rule to be 'border-radius: 10px'",
+        )
+        # Assertions for all properties of second rule
+        self.assertEqual(
+            f"{rules_2.properties[0].name}: {rules_2.properties[0].value}",
+            "qproperty-enabled: false",
+            "Expected first property of second rule to be 'qproperty-enabled: false'",
+        )
+        self.assertEqual(
+            f"{rules_2.properties[1].name}: {rules_2.properties[1].value}",
+            "background: gray",
+            "Expected second property of second rule to be 'background: gray'",
+        )
+        self.assertEqual(
+            self.parser.to_string(),
+            expected,
+            "Expected formatted QSS string to match",
+        )
+        self.assertEqual(
+            self.errors,
+            [],
+            "QSS with comments should produce no errors",
+        )
+
     def test_to_string_comments_bigger_than_a_line_and_single_line(self) -> None:
         """
         Test parsing QSS with only comments in bigger than a line and in a single line.
@@ -1826,7 +1944,7 @@ QFrame:disabled {
             border-radius: 10px;
         }
         /*More single-line comment*/
-        /* Another comment 
+        /* Another comment
         more comment*/
         #customButton {
             qproperty-enabled: false;
@@ -2030,7 +2148,7 @@ QPushButton {
         self.assertEqual(
             len(rules_added), 3, "Should trigger rule_added for each qproperty rule"
         )
-        selectors: set = {rule.selector for rule in rules_added}
+        selectors: Set[Any] = {rule.selector for rule in rules_added}
         self.assertEqual(
             selectors,
             {

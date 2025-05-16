@@ -275,7 +275,7 @@ class QSSRule:
         Args:
             selector (str): The CSS selector for this rule.
         """
-        self.selector: str = selector.strip()
+        self.selector: str = SelectorUtils.strip_comments(selector).strip()
         self.properties: List[QSSProperty] = []
         self.object_name: Optional[str] = None
         self.class_name: Optional[str] = None
@@ -661,6 +661,23 @@ class SelectorUtils:
 
         return errors
 
+    @staticmethod
+    def strip_comments(line: str) -> str:
+        """
+        Remove inline and block comments from a QSS line.
+
+        Args:
+            line (str): The input line to process.
+
+        Returns:
+            str: The line with comments removed.
+        """
+        while "/*" in line and "*/" in line:
+            start = line.index("/*")
+            end = line.index("*/", start) + 2
+            line = line[:start] + line[end:]
+        return line.strip()
+
 
 class QSSFormatter:
     """
@@ -983,7 +1000,7 @@ class SelectorPlugin(BaseQSSPlugin):
         Returns:
             bool: True if the line was processed by this plugin, False otherwise.
         """
-        line = line.strip()
+        line = SelectorUtils.strip_comments(line)
         if not line or state.in_comment or state.in_variables:
             return False
 
@@ -1004,7 +1021,7 @@ class SelectorPlugin(BaseQSSPlugin):
         if line.endswith("{") and not state.in_rule:
             return self._start_rule(line, state, variable_manager)
 
-        if line == "}" and state.in_rule:
+        if line.strip() == "}" and state.in_rule:
             return self._end_rule(state, variable_manager)
 
         if line.endswith("{") and state.in_rule:
@@ -1034,7 +1051,7 @@ class SelectorPlugin(BaseQSSPlugin):
         """
         state.buffer = ""
         state.property_lines = []
-        selector_part = line[:-1].strip()
+        selector_part = SelectorUtils.strip_comments(line.split("{")[0].strip())
         if selector_part:
             normalized_selector = SelectorUtils.normalize_selector(selector_part)
             selectors = [s.strip() for s in normalized_selector.split(",") if s.strip()]
@@ -1262,7 +1279,7 @@ class PropertyPlugin(BaseQSSPlugin):
         Returns:
             bool: True if the line was processed as a property, False otherwise.
         """
-        line = line.strip()
+        line = SelectorUtils.strip_comments(line).strip()
         if not state.in_rule or state.in_comment or state.in_variables:
             return False
         if line.endswith("{") or line == "}":
@@ -1526,12 +1543,13 @@ class QSSParser:
         if not line:
             return
 
+        clean_line = SelectorUtils.strip_comments(line)
         if (
             not self._state.in_rule
             and not self._state.in_variables
             and not self._state.in_comment
-            and ":" in line
-            and line.endswith(";")
+            and ":" in clean_line
+            and clean_line.endswith(";")
         ):
             self.dispatch_error(
                 f"Error on line {self._state.current_line}: Property outside block: {line}"
