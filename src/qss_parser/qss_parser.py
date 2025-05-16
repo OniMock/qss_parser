@@ -1318,6 +1318,8 @@ class VariablePlugin(QSSParserPlugin):
                 state.in_comment = False
             return True
         if line.startswith("/*"):
+            if "*/" in line:
+                return True
             state.in_comment = True
             return True
         if line == "@variables {" and not state.in_rule:

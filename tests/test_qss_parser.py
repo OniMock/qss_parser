@@ -1716,6 +1716,152 @@ QFrame:disabled {
         self.assertEqual(self.parser.to_string().strip(), expected.strip())
         self.assertEqual(self.errors, [], "Single-line rule should produce no errors")
 
+    def test_to_string_comments_in_single_line(self) -> None:
+        """
+        Test parsing QSS with only comments in single line.
+        """
+        qss: str = """
+        /* This is a comment */
+        /* Another comment */
+        #secondButton QPushButton {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        /* Another comment */
+        #customButton {
+            qproperty-enabled: false;
+            background: gray;
+        }
+        """
+        expected = """#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        self.assertEqual(
+            len(self.parser._state.rules),
+            2,
+            "Comments-only QSS should result in no rules",
+        )
+        self.assertEqual(
+            self.parser.to_string().split(),
+            expected.split(),
+            "Expected string passed",
+        )
+        self.assertEqual(self.errors, [], "Comments-only QSS should produce no errors")
+
+    def test_to_string_comments_bigger_than_a_line(self) -> None:
+        """
+        Test parsing QSS with only comments in bigger than a line.
+        """
+        qss: str = """
+        /* This is a comment
+        new line
+        more line here
+        */
+        /* Another comment
+        seccond comment
+        */
+        #secondButton QPushButton {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        /* Another comment 
+        more comment*/
+        #customButton {
+            qproperty-enabled: false;
+            background: gray;
+        }
+        """
+        expected = """#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        self.assertEqual(
+            len(self.parser._state.rules),
+            2,
+            "Comments-only QSS should result in no rules",
+        )
+        self.assertEqual(
+            self.parser.to_string().split(),
+            expected.split(),
+            "Expected string passed",
+        )
+        self.assertEqual(self.errors, [], "Comments-only QSS should produce no errors")
+
+    def test_to_string_comments_bigger_than_a_line_and_single_line(self) -> None:
+        """
+        Test parsing QSS with only comments in bigger than a line and in a single line.
+        """
+        qss: str = """
+        /* This is a comment
+        new line
+        more line here
+        */
+        /* Another comment */
+        #secondButton QPushButton {
+            color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 10px;
+        }
+        /*More single-line comment*/
+        /* Another comment 
+        more comment*/
+        #customButton {
+            qproperty-enabled: false;
+            background: gray;
+        }
+        """
+        expected = """#secondButton QPushButton {
+    color: red;
+    width: 15px;
+    height: 15px;
+    border-radius: 10px;
+}
+
+#customButton {
+    qproperty-enabled: false;
+    background: gray;
+}
+"""
+        self.parser.parse(qss)
+        print(self.parser.to_string())
+        self.assertEqual(
+            len(self.parser._state.rules),
+            2,
+            "Comments-only QSS should result in no rules",
+        )
+        self.assertEqual(
+            self.parser.to_string().split(),
+            expected.split(),
+            "Expected string passed",
+        )
+        self.assertEqual(self.errors, [], "Comments-only QSS should produce no errors")
+
 
 class TestQSSParserQProperty(unittest.TestCase):
     def setUp(self) -> None:
