@@ -388,7 +388,6 @@ class TestQSSParserParsing(unittest.TestCase):
         self.parser.parse(qss)
         self.assertEqual(len(self.parser._state.rules), 1, "Should parse valid rule")
         rule: QSSRule = self.parser._state.rules[0]
-        print(self.parser.to_string())
         self.assertEqual(rule.properties[0].value, "red")
         self.assertEqual(rule.properties[1].value, "14px")
         self.assertEqual(len(self.errors), 2, "Should report two errors")
@@ -1748,7 +1747,6 @@ QFrame:disabled {
 }
 """
         self.parser.parse(qss)
-        print(self.parser.to_string())
         self.assertEqual(
             len(self.parser._state.rules),
             2,
@@ -1799,7 +1797,6 @@ QFrame:disabled {
 }
 """
         self.parser.parse(qss)
-        print(self.parser.to_string())
         self.assertEqual(
             len(self.parser._state.rules),
             2,
@@ -1849,7 +1846,6 @@ QFrame:disabled {
 }
 """
         self.parser.parse(qss)
-        print(self.parser.to_string())
         self.assertEqual(
             len(self.parser._state.rules),
             2,
@@ -2031,8 +2027,6 @@ QPushButton {
         rules_added: List[QSSRule] = []
         self.parser.on(ParserEvent.RULE_ADDED, lambda rule: rules_added.append(rule))
         self.parser.parse(self.qss)
-        print(rules_added)
-        print("Teste", self.parser.to_string())
         self.assertEqual(
             len(rules_added), 3, "Should trigger rule_added for each qproperty rule"
         )
