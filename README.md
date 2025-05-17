@@ -414,11 +414,11 @@ If you find QSS Parser helpful and want to support its development, consider mak
 <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/crypto_wallet.svg" width="150" />
 </p>
 
-| Blockchain                     | Address                                                          | QR Code                                                                                                                    |
-| ------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 🪙 EVM (ETH, BSC, RON, POL...) | `0xD42f8604634d3882b3CeCB4408c10ae745182dEF`                     | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_evm.jpg" width="120"> |
-| 🪙 Solana (SOL)                | `3fFV5c3pnp9zG81Q3wNsteCPN4zJkpBd3Gm5X2iQ6MK8`                   | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_sol.jpg" width="120"> |
-| 🪙 Bitcoin (BTC)               | `bc1pde34mu568t8sqph708huu7z5p4ecgxv7g90vv0wq72spxrlzuz9s3ge2h5` | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_btc.jpg" width="120"> |
+| Blockchain                                                                                                                                                      | Address                                                          | QR Code                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/svg/eth_logo.svg" width="30" align="center"> EVM (ETH, BSC, RON, POL...) | `0xD42f8604634d3882b3CeCB4408c10ae745182dEF`                     | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_evm.jpg" width="120"> |
+| <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/svg/sol_logo.svg" width="30" align="center"> Solana (SOL)                | `3fFV5c3pnp9zG81Q3wNsteCPN4zJkpBd3Gm5X2iQ6MK8`                   | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_sol.jpg" width="120"> |
+| <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/svg/btc_logo.svg" width="30" align="center"> Bitcoin (BTC)               | `bc1pde34mu568t8sqph708huu7z5p4ecgxv7g90vv0wq72spxrlzuz9s3ge2h5` | <img src="https://raw.githubusercontent.com/OniMock/.github/refs/heads/main/.resources/qrcode/qrcode_btc.jpg" width="120"> |
 
 **How to Donate**:
 
