@@ -1,3 +1,29 @@
+## [0.2.1] - 2025-05-19
+
+qss-parser v0.2.1
+
+### Overview
+Version 0.2.1 of qss-parser.
+
+## Changes
+- Fix: QSS selector matching to include pseudo-states, pseudo-elements, and attributes with full typing ([6233cb7](https://github.com/OniMock/qss_parser/commit/6233cb7dafcad5edf7001a257c47773dadae34fe))
+- Update: logos ([0c883d9](https://github.com/OniMock/qss_parser/commit/0c883d9b55dd09da5547453b0451d66931bbac33))
+- Fix: QSSParser to strip selector comments and add full property assertions in test. ([552df6c](https://github.com/OniMock/qss_parser/commit/552df6c7c944e3a623400bf4dfcae2239a27c4d5))
+- Remove: prints on tests ([3b103a9](https://github.com/OniMock/qss_parser/commit/3b103a9a75a1920b98b0900d07f73318ff8a97e6))
+- Fix: ignore single-line ([8bde494](https://github.com/OniMock/qss_parser/commit/8bde494a01e0cc5bc27c6f5267c56547607695ad))
+- Remove: restriction on pseudo-states in comma-separated selectors and enhance rule splitting ([94ca200](https://github.com/OniMock/qss_parser/commit/94ca200e8bef34578c3cb793a94c909c4c13c037))
+- Fix: QSS parser to handle hyphenated pseudo-elements correctly ([f294556](https://github.com/OniMock/qss_parser/commit/f294556e3201c72e1655cbc2b54841f59a269bad))
+- Add: subcontrol to list pseudo elements ([a56168d](https://github.com/OniMock/qss_parser/commit/a56168d6893a256ed23a9c1643e77d27ac8dcef5))
+- Fix: incorrect semicolon validation in single-line QSS rule parsing ([ab85483](https://github.com/OniMock/qss_parser/commit/ab8548347f66fd20077f119148a12a55348c6ad5))
+- Fix: ":" when inside of the attribute ([605ade4](https://github.com/OniMock/qss_parser/commit/605ade485e70aa5bd2db36e5b16533d0fa7e159a))
+- Fix: accept _ for custom properties ([6c92445](https://github.com/OniMock/qss_parser/commit/6c924452d8b6eda6364ee029ca97747793c87455))
+## Installation
+```bash
+pip install qss-parser==0.2.1
+```
+
+See the [README.md](README.md) for more details.
+
 ## [0.2.0] - 2025-05-14
 
 qss-parser v0.2.0
