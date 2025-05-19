@@ -915,6 +915,437 @@ QPushButton {
 }"""
         self.assertEqual(stylesheet.strip(), expected.strip())
 
+    def test_get_styles_with_class_additional_selectors_and_special_selectors_and_include_class_if_object_name_false(
+        self,
+    ) -> None:
+        self.maxDiff = None
+        """
+        Test style retrieval combining include_class_if_object_name and additional selectors,
+        including pseudo-states, pseudo-elements, and attribute selectors.
+        """
+        qss = """
+        #qScrollArea QScrollArea {
+            color: blue;
+        }
+        #otherScroll QScrollArea {
+            color: red;
+        }
+        QScrollArea {
+            color: green;
+            font-size: 12px;
+        }
+        QScrollArea:hover {
+            background-color: yellow;
+        }
+        QScrollArea::item {
+            border: 1px solid black;
+        }
+        QScrollArea[select="True"] {
+            color: white;
+        }
+        QPushButton {
+            background-color: blue;
+        }
+        QPushButton:pressed {
+            color: yellow;
+        }
+        QPushButton::indicator {
+            border: 2px solid gray;
+        }
+        QPushButton[select="True"] {
+            font-weight: bold;
+        }
+        #button QPushButton {
+            color: gray;
+        }
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "qScrollArea"
+        widget.metaObject.return_value.className.return_value = "QScrollArea"
+        parser = QSSParser()
+        parser.parse(qss)
+        stylesheet: str = parser.get_styles_for(
+            widget,
+            additional_selectors=["QPushButton"],
+            include_class_if_object_name=False,
+        )
+        expected = """#qScrollArea QScrollArea {
+    color: blue;
+}
+QPushButton {
+    background-color: blue;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+QPushButton:pressed {
+    color: yellow;
+}
+QPushButton[select="True"] {
+    font-weight: bold;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_class_additional_selectors_and_special_selectors_and_include_class_if_object_name_true(
+        self,
+    ) -> None:
+        self.maxDiff = None
+        """
+        Test style retrieval combining include_class_if_object_name and additional selectors,
+        including pseudo-states, pseudo-elements, and attribute selectors.
+        """
+        qss = """
+        #qScrollArea QScrollArea {
+            color: blue;
+        }
+        #otherScroll QScrollArea {
+            color: red;
+        }
+        QScrollArea {
+            color: green;
+            font-size: 12px;
+        }
+        QScrollArea:hover {
+            background-color: yellow;
+        }
+        QScrollArea::item {
+            border: 1px solid black;
+        }
+        QScrollArea[select="True"] {
+            color: white;
+        }
+        QPushButton {
+            background-color: blue;
+        }
+        QPushButton:pressed {
+            color: yellow;
+        }
+        QPushButton::indicator {
+            border: 2px solid gray;
+        }
+        QPushButton[select="True"] {
+            font-weight: bold;
+        }
+        #button QPushButton {
+            color: gray;
+        }
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "qScrollArea"
+        widget.metaObject.return_value.className.return_value = "QScrollArea"
+        parser = QSSParser()
+        parser.parse(qss)
+        stylesheet: str = parser.get_styles_for(
+            widget,
+            additional_selectors=["QPushButton"],
+            include_class_if_object_name=True,
+        )
+        expected = """#qScrollArea QScrollArea {
+    color: blue;
+}
+QPushButton {
+    background-color: blue;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+QPushButton:pressed {
+    color: yellow;
+}
+QPushButton[select="True"] {
+    font-weight: bold;
+}
+QScrollArea {
+    color: green;
+    font-size: 12px;
+}
+QScrollArea::item {
+    border: 1px solid black;
+}
+QScrollArea:hover {
+    background-color: yellow;
+}
+QScrollArea[select="True"] {
+    color: white;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_class_additional_selectors_and_special_selectors_and_without_class_name(
+        self,
+    ) -> None:
+        self.maxDiff = None
+        """
+        Test style retrieval combining include_class_if_object_name and additional selectors,
+        including pseudo-states, pseudo-elements, and attribute selectors.
+        """
+        qss = """
+        #qScrollArea QScrollArea {
+            color: blue;
+        }
+        #otherScroll QScrollArea {
+            color: red;
+        }
+        QScrollArea {
+            color: green;
+            font-size: 12px;
+        }
+        QScrollArea:hover {
+            background-color: yellow;
+        }
+        QScrollArea::item {
+            border: 1px solid black;
+        }
+        QScrollArea[select="True"] {
+            color: white;
+        }
+        QPushButton {
+            background-color: blue;
+        }
+        QPushButton:pressed {
+            color: yellow;
+        }
+        QPushButton::indicator {
+            border: 2px solid gray;
+        }
+        QPushButton[select="True"] {
+            font-weight: bold;
+        }
+        #button QPushButton {
+            color: gray;
+        }
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = ""
+        widget.metaObject.return_value.className.return_value = "QScrollArea"
+        parser = QSSParser()
+        parser.parse(qss)
+        stylesheet: str = parser.get_styles_for(
+            widget,
+            additional_selectors=["QPushButton"],
+        )
+        expected = """QPushButton {
+    background-color: blue;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+QPushButton:pressed {
+    color: yellow;
+}
+QPushButton[select="True"] {
+    font-weight: bold;
+}
+QScrollArea {
+    color: green;
+    font-size: 12px;
+}
+QScrollArea::item {
+    border: 1px solid black;
+}
+QScrollArea:hover {
+    background-color: yellow;
+}
+QScrollArea[select="True"] {
+    color: white;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_class_additional_selectors_and_special_selectors_and_fallback_class(
+        self,
+    ) -> None:
+        self.maxDiff = None
+        """
+        Test style retrieval combining include_class_if_object_name and additional selectors,
+        including pseudo-states, pseudo-elements, and attribute selectors.
+        """
+        qss = """
+        #qScrollArea QScrollArea {
+            color: blue;
+        }
+        #otherScroll QScrollArea {
+            color: red;
+        }
+        #otherScroll QScrollArea[other="False"] {
+            color: red;
+        }
+        QScrollArea {
+            color: green;
+            font-size: 12px;
+        }
+        QScrollArea:hover {
+            background-color: yellow;
+        }
+        QScrollArea::item {
+            border: 1px solid black;
+        }
+        QScrollArea[another="False"] {
+            color: white;
+        }
+        QPushButton {
+            background-color: blue;
+        }
+        QPushButton:pressed {
+            color: yellow;
+        }
+        QPushButton::indicator {
+            border: 2px solid gray;
+        }
+        QPushButton[select="True"] {
+            font-weight: bold;
+        }
+        #button QPushButton {
+            color: gray;
+        }
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "qFrame"
+        widget.metaObject.return_value.className.return_value = "QFrame"
+        parser = QSSParser()
+        parser.parse(qss)
+        stylesheet: str = parser.get_styles_for(
+            widget, additional_selectors=["QPushButton"], fallback_class="QScrollArea"
+        )
+        expected = """QPushButton {
+    background-color: blue;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+QPushButton:pressed {
+    color: yellow;
+}
+QPushButton[select="True"] {
+    font-weight: bold;
+}
+QScrollArea {
+    color: green;
+    font-size: 12px;
+}
+QScrollArea::item {
+    border: 1px solid black;
+}
+QScrollArea:hover {
+    background-color: yellow;
+}
+QScrollArea[another="False"] {
+    color: white;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
+    def test_get_styles_with_class_additional_selectors_and_special_selectors_and_fallback_class_with_duplicates(
+        self,
+    ) -> None:
+        self.maxDiff = None
+        """
+        Test style retrieval combining include_class_if_object_name and additional selectors,
+        including pseudo-states, pseudo-elements, and attribute selectors and duplicates.
+        """
+        qss = """
+        #qScrollArea QScrollArea {
+            color: blue;
+        }
+        #qScrollArea QScrollArea {
+            color: green;
+        }
+        #otherScroll QScrollArea {
+            color: red;
+        }
+        #otherScroll QScrollArea[other="False"] {
+            color: red;
+        }
+        QScrollArea {
+            color: green;
+            font-size: 12px;
+        }
+        QScrollArea:hover {
+            background-color: yellow;
+        }
+        QScrollArea:hover {
+            background-color: green;
+        }
+        QPushButton QScrollArea:hover {
+            background-color: gray;
+        }
+        QScrollArea::item {
+            border: 1px solid black;
+        }
+        QScrollArea[another="False"] {
+            color: white;
+        }
+        QPushButton {
+            background-color: blue;
+        }
+        QPushButton  > QFrame{
+            background-color: orange;
+            font-size: 20px
+        }
+        QPushButton  >     QFrame{
+            background-color: blue;
+        }
+        QLabel  >     QFrame{
+            background-color: white;
+        }
+        QPushButton:pressed {
+            color: yellow;
+        }
+        QPushButton::indicator {
+            border: 2px solid gray;
+        }
+        QPushButton[select="True"] {
+            font-weight: bold;
+        }
+        #button QPushButton {
+            color: gray;
+        }
+        """
+        widget: Mock = Mock()
+        widget.objectName.return_value = "qFrame"
+        widget.metaObject.return_value.className.return_value = "QFrame"
+        parser = QSSParser()
+        parser.parse(qss)
+        stylesheet: str = parser.get_styles_for(
+            widget, additional_selectors=["QPushButton"], fallback_class="QScrollArea"
+        )
+        print(stylesheet)
+        expected = """QPushButton {
+    background-color: blue;
+}
+QPushButton > QFrame {
+    background-color: blue;
+    font-size: 20px;
+}
+QPushButton QScrollArea:hover {
+    background-color: gray;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+QPushButton:pressed {
+    color: yellow;
+}
+QPushButton[select="True"] {
+    font-weight: bold;
+}
+QScrollArea {
+    color: green;
+    font-size: 12px;
+}
+QScrollArea::item {
+    border: 1px solid black;
+}
+QScrollArea:hover {
+    background-color: green;
+}
+QScrollArea[another="False"] {
+    color: white;
+}
+"""
+        self.assertEqual(stylesheet.strip(), expected.strip())
+
     def test_get_styles_for_object_name_no_rules(self) -> None:
         """
         Test style retrieval for an object name with no rules, including class styles.
@@ -1071,9 +1502,9 @@ QFrame {
             stylesheet, "", "Incomplete QSS should return empty stylesheet"
         )
 
-    def test_get_styles_for_hierarchical_selector(self) -> None:
+    def test_get_styles_for_hierarchical_selector_not_ger(self) -> None:
         """
-        Test style retrieval with hierarchical selectors.
+        Test style not retrieval with hierarchical selectors.
         """
         parser: QSSParser = QSSParser()
         qss: str = """
@@ -1086,14 +1517,11 @@ QFrame {
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
         stylesheet: str = parser.get_styles_for(widget)
-        expected: str = """QWidget > QFrame QPushButton {
-    border: 1px solid green;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(stylesheet.strip(), "")
 
     def test_get_styles_for_complex_nested_selector(self) -> None:
         """
-        Test style retrieval with complex nested selectors.
+        Test style not retrieval with complex nested selectors.
         """
         parser: QSSParser = QSSParser()
         qss: str = """
@@ -1106,10 +1534,8 @@ QFrame {
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
         stylesheet: str = parser.get_styles_for(widget)
-        expected: str = """QWidget QFrame > QPushButton {
-    border: 1px solid green;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
+
+        self.assertEqual(stylesheet.strip(), "")
 
     def test_get_styles_for_complex_selector(self) -> None:
         """
@@ -1126,10 +1552,7 @@ QFrame {
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
         stylesheet: str = parser.get_styles_for(widget)
-        expected: str = """QWidget QFrame > QPushButton:hover {
-    border: 1px solid green;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(stylesheet.strip(), "")
 
     def test_get_styles_for_selector_with_extra_spaces(self) -> None:
         """
@@ -1146,10 +1569,7 @@ QFrame {
         widget.objectName.return_value = ""
         widget.metaObject.return_value.className.return_value = "QPushButton"
         stylesheet: str = parser.get_styles_for(widget)
-        expected: str = """QWidget > QPushButton {
-    border: 1px solid green;
-}"""
-        self.assertEqual(stylesheet.strip(), expected.strip())
+        self.assertEqual(stylesheet.strip(), "")
 
     def test_get_styles_for_attribute_selector(self) -> None:
         """

@@ -1763,50 +1763,29 @@ class QSSStyleSelector:
             List[QSSRule]: List of matching rules.
         """
         matching_rules: Set[QSSRule] = set()
-        base_selector = selector.split("::")[0].split(":")[0].strip()
+        escaped_selector: str = re.escape(selector)
+        pattern: Pattern[str] = re.compile(rf"^{escaped_selector}([: \[\>]|$|::)")
 
         for rule in rules:
-            rule_selectors = [s.strip() for s in rule.selector.split(",")]
+            rule_selectors: List[str] = [s.strip() for s in rule.selector.split(",")]
             for sel in rule_selectors:
-                if sel == selector:
-                    matching_rules.add(rule)
-                    continue
-
-                sel_without_attrs = Constants.COMPILED_ATTRIBUTE_PATTERN.sub(
-                    "", sel
-                ).strip()
-                if not re.search(r"[> ]+", sel_without_attrs):
-                    part_base = sel_without_attrs.split("::")[0].split(":")[0].strip()
-                    if part_base == base_selector:
-                        if (
-                            base_selector.startswith("#")
-                            and base_selector[1:] != object_name
+                if pattern.search(sel):
+                    if selector.startswith("#") and f"#{object_name}" not in sel:
+                        continue
+                    if not selector.startswith("#") and selector != class_name:
+                        sel_without_attrs: str = (
+                            Constants.COMPILED_ATTRIBUTE_PATTERN.sub("", sel).strip()
+                        )
+                        parts: List[str] = [
+                            part.strip()
+                            for part in re.split(r"[> ]+", sel_without_attrs)
+                            if part.strip()
+                        ]
+                        if not any(
+                            part.split("::")[0].split(":")[0] == selector
+                            for part in parts
                         ):
                             continue
-                        if (
-                            not base_selector.startswith("#")
-                            and base_selector != class_name
-                        ):
-                            continue
-                        matching_rules.add(rule)
-                    continue
-
-                sel_parts = [
-                    part.strip()
-                    for part in re.split(r"[> ]+", sel_without_attrs)
-                    if part.strip()
-                ]
-                class_match = False
-                object_match = True
-                for part in sel_parts:
-                    part_base = part.split("::")[0].split(":")[0].strip()
-                    if part_base == class_name:
-                        class_match = True
-                    elif part_base.startswith("#") and part_base[1:] != object_name:
-                        object_match = False
-                        break
-
-                if class_match and object_match:
                     matching_rules.add(rule)
 
         return list(matching_rules)
