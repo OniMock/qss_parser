@@ -22,9 +22,10 @@
 - [Installation](#installation)
 - [Usage](#usage)
   - [Complete Example](#complete-example)
-  - [Basic Example](#basic-example)
+  - [Basic Parsing and Style Extraction](#basic-parsing-and-style-extraction)
+  - [Handling Parser Events](#handling-parser-events)
   - [Validating QSS Syntax](#validating-qss-syntax)
-  - [Parsing QSS with Attribute Selectors](#parsing-qss-with-attribute-selectors)
+  - [Parsing QSS with Attribute Selectors and Pseudo-States](#parsing-qss-with-attribute-selectors-and-pseudo-states)
   - [Parsing QSS with Variables](#parsing-qss-with-variables)
   - [Integration with Qt Applications](#integration-with-qt-applications)
 - [API Reference](#api-reference)
@@ -69,18 +70,18 @@ pip install qss-parser PyQt5
 
 ## Usage
 
-The `qss-parser` library offers an intuitive API for validating, parsing, and applying QSS styles. Below are examples showcasing its capabilities.
+The `qss-parser` library offers an intuitive API for validating, parsing, and applying QSS styles. Below are examples showcasing its capabilities, focusing on the `parse()`, `on()`, `to_string()`, and `get_styles_for()` methods.
 
 ### Complete Example
 
 Explore a complete example in the [examples directory](https://github.com/OniMock/qss_parser/tree/main/examples).
 
-### Basic Example
+### Basic Parsing and Style Extraction
 
-Validate and parse a QSS string, then retrieve styles for a mock widget.
+Parse a QSS string, extract styles for a widget, and convert parsed rules to a formatted string.
 
 ```python
-from qss_parser import QSSParser
+from qss_parser import QSSParser, ParserEvent
 from unittest.mock import Mock
 
 # Mock widget setup
@@ -99,20 +100,23 @@ qss = """
 QPushButton {
     background: blue;
 }
+QPushButton:hover {
+    background: yellow;
+}
 """
 
-# Validate QSS
-errors = parser.check_format(qss)
-if errors:
-    print("Invalid QSS:")
-    for error in errors:
-        print(error)
-else:
-    # Parse and extract styles
-    parser.parse(qss)
-    styles = parser.get_styles_for(widget)
-    print("Styles for widget:")
-    print(styles)
+# Parse QSS
+parser.parse(qss)
+
+# Get styles for widget
+styles = parser.get_styles_for(widget, include_class_if_object_name=True)
+print("Styles for widget:")
+print(styles)
+
+# Convert parsed rules to string
+formatted_qss = parser.to_string()
+print("\nFormatted QSS:")
+print(formatted_qss)
 ```
 
 **Output**:
@@ -125,39 +129,28 @@ Styles for widget:
 QPushButton {
     background: blue;
 }
-```
-
-### Validating QSS Syntax
-
-Use `check_format` to validate QSS syntax and report errors.
-
-```python
-from qss_parser import QSSParser
-
-parser = QSSParser()
-qss = """
-QPushButton {
-    color: blue
+QPushButton:hover {
+    background: yellow;
 }
-"""
 
-errors = parser.check_format(qss)
-for error in errors:
-    print(error)
+Formatted QSS:
+#myButton {
+    color: red;
+}
+QPushButton {
+    background: blue;
+}
+QPushButton:hover {
+    background: yellow;
+}
 ```
 
-**Output**:
+### Handling Parser Events
 
-```
-Error on line 3: Property missing ';': color: blue
-```
-
-### Parsing QSS with Attribute Selectors
-
-Parse QSS with complex attribute selectors and extract styles.
+Use the `on()` method to subscribe to parser events (`rule_added`, `error_found`, `variable_defined`, `parse_completed`).
 
 ```python
-from qss_parser import QSSParser
+from qss_parser import QSSParser, ParserEvent
 from unittest.mock import Mock
 
 # Mock widget
@@ -165,34 +158,127 @@ widget = Mock()
 widget.objectName.return_value = "myButton"
 widget.metaObject.return_value.className.return_value = "QPushButton"
 
+# Initialize parser
 parser = QSSParser()
+
+# Define event handlers
+def on_rule_added(rule):
+    print(f"Rule added: {rule.selector}")
+
+def on_error_found(error):
+    print(f"Error: {error}")
+
+def on_variable_defined(name, value):
+    print(f"Variable defined: {name} = {value}")
+
+def on_parse_completed():
+    print("Parsing completed")
+
+# Register event handlers
+parser.on(ParserEvent.RULE_ADDED, on_rule_added)
+parser.on(ParserEvent.ERROR_FOUND, on_error_found)
+parser.on(ParserEvent.VARIABLE_DEFINED, on_variable_defined)
+parser.on(ParserEvent.PARSE_COMPLETED, on_parse_completed)
+
+# Sample QSS with variables and an error
 qss = """
-QPushButton[data-value="complex string with spaces"] {
-    color: blue;
+@variables {
+    --primary-color: blue;
+}
+#myButton {
+    color: var(--primary-color);
+}
+QPushButton {
+    background: green
 }
 """
 
+# Parse QSS
 parser.parse(qss)
+
+# Get styles for widget
 styles = parser.get_styles_for(widget)
-print("Styles for widget:")
+print("\nStyles for widget:")
 print(styles)
 ```
 
 **Output**:
 
 ```
+Variable defined: --primary-color = blue
+Rule added: #myButton
+Rule added: QPushButton
+Error: Error on line 8: Property missing ';': background: green
+Parsing completed
+
 Styles for widget:
-QPushButton[data-value="complex string with spaces"] {
+#myButton {
     color: blue;
 }
 ```
 
-### Parsing QSS with Variables
+### Validating QSS Syntax
 
-Parse QSS with a `@variables` block, including nested variables.
+Use parses.on with error event to validate QSS syntax and report errors.
 
 ```python
-from qss_parser import QSSParser
+from qss_parser import QSSParser, ParserEvent
+
+# Initialize parser
+parser = QSSParser()
+
+# Register error handler
+def on_error_found(error):
+    print(f"Error: {error}")
+parser.on(ParserEvent.ERROR_FOUND, on_error_found)
+
+# Sample QSS with syntax error
+qss = """
+QPushButton {
+    color: blue
+}
+QFrame {
+    font-size: 12px;
+    color: blue
+}
+QFrame {
+    font-size: 12px
+    color: blue
+}
+"""
+
+# Validate QSS
+parser.parse(qss)
+
+# Convert parsed rules to string (only valid rules)
+formatted_qss = parser.to_string()
+print("\nFormatted QSS (valid rules):")
+print(formatted_qss)
+```
+
+**Output**:
+
+```
+Error: Error on line 10: Property missing ';': font-size: 12px
+Parsing completed
+
+Formatted QSS (valid rules):
+QPushButton {
+    color: blue;
+}
+
+QFrame {
+    font-size: 12px;
+    color: blue;
+}
+```
+
+### Parsing QSS with Attribute Selectors and Pseudo-States
+
+Parse QSS with complex attribute selectors, pseudo-states, and pseudo-elements, and extract styles for a widget.
+
+```python
+from qss_parser import QSSParser, ParserEvent
 from unittest.mock import Mock
 
 # Mock widget
@@ -200,7 +286,103 @@ widget = Mock()
 widget.objectName.return_value = "myButton"
 widget.metaObject.return_value.className.return_value = "QPushButton"
 
+# Initialize parser
 parser = QSSParser()
+
+# Register parse completion handler
+def on_parse_completed():
+    print("Parsing completed")
+parser.on(ParserEvent.PARSE_COMPLETED, on_parse_completed)
+
+# Sample QSS
+qss = """
+QPushButton[data-value="complex string"] {
+    color: blue;
+}
+QPushButton:hover {
+    background: yellow;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+#myButton QPushButton {
+    font-weight: bold;
+}
+"""
+
+# Parse QSS
+parser.parse(qss)
+
+# Get styles with additional selectors
+styles = parser.get_styles_for(
+    widget,
+    additional_selectors=["QPushButton"],
+    include_class_if_object_name=True
+)
+print("Styles for widget:")
+print(styles)
+
+# Convert parsed rules to string
+formatted_qss = parser.to_string()
+print("\nFormatted QSS:")
+print(formatted_qss)
+```
+
+**Output**:
+
+```
+Parsing completed
+Styles for widget:
+#myButton QPushButton {
+    font-weight: bold;
+}
+QPushButton[data-value="complex string"] {
+    color: blue;
+}
+QPushButton:hover {
+    background: yellow;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+
+Formatted QSS:
+QPushButton[data-value="complex string"] {
+    color: blue;
+}
+QPushButton:hover {
+    background: yellow;
+}
+QPushButton::indicator {
+    border: 2px solid gray;
+}
+#myButton QPushButton {
+    font-weight: bold;
+}
+```
+
+### Parsing QSS with Variables
+
+Parse QSS with a `@variables` block, resolve nested variables, and extract styles.
+
+```python
+from qss_parser import QSSParser, ParserEvent
+from unittest.mock import Mock
+
+# Mock widget
+widget = Mock()
+widget.objectName.return_value = "myButton"
+widget.metaObject.return_value.className.return_value = "QPushButton"
+
+# Initialize parser
+parser = QSSParser()
+
+# Register variable defined handler
+def on_variable_defined(name, value):
+    print(f"Variable defined: {name} = {value}")
+parser.on(ParserEvent.VARIABLE_DEFINED, on_variable_defined)
+
+# Sample QSS
 qss = """
 @variables {
     --base-color: #0000ff;
@@ -212,39 +394,60 @@ qss = """
     font-size: var(--font-size);
     background: white;
 }
+QPushButton:hover {
+    background: yellow;
+}
 """
 
-# Validate QSS
-errors = parser.check_format(qss)
-if errors:
-    print("Invalid QSS:")
-    for error in errors:
-        print(error)
-else:
-    parser.parse(qss)
-    styles = parser.get_styles_for(widget)
-    print("Styles for widget:")
-    print(styles)
+# Parse QSS
+parser.parse(qss)
+
+# Get styles for widget
+styles = parser.get_styles_for(widget, include_class_if_object_name=True)
+print("\nStyles for widget:")
+print(styles)
+
+# Convert parsed rules to string
+formatted_qss = parser.to_string()
+print("\nFormatted QSS:")
+print(formatted_qss)
 ```
 
 **Output**:
 
 ```
+Variable defined: --base-color = #0000ff
+Variable defined: --primary-color = #0000ff
+Variable defined: --font-size = 14px
+
 Styles for widget:
 #myButton {
     color: #0000ff;
     font-size: 14px;
     background: white;
 }
+QPushButton:hover {
+    background: yellow;
+}
+
+Formatted QSS:
+#myButton {
+    color: #0000ff;
+    font-size: 14px;
+    background: white;
+}
+QPushButton:hover {
+    background: yellow;
+}
 ```
 
 ### Integration with Qt Applications
 
-Apply parsed QSS styles to a PyQt5 widget.
+Apply parsed QSS styles to a PyQt5 widget, using event handlers for debugging.
 
 ```python
 from PyQt5.QtWidgets import QApplication, QPushButton
-from qss_parser import QSSParser
+from qss_parser import QSSParser, ParserEvent
 import sys
 
 # Initialize Qt application
@@ -253,17 +456,17 @@ app = QApplication(sys.argv)
 # Initialize parser
 parser = QSSParser()
 
+# Register event handlers
+def on_error_found(error):
+    print(f"Error: {error}")
+def on_parse_completed():
+    print("Parsing completed")
+parser.on(ParserEvent.ERROR_FOUND, on_error_found)
+parser.on(ParserEvent.PARSE_COMPLETED, on_parse_completed)
+
 # Load QSS from file
 with open("styles.qss", "r", encoding="utf-8") as f:
     qss = f.read()
-
-# Validate QSS
-errors = parser.check_format(qss)
-if errors:
-    print("Invalid QSS:")
-    for error in errors:
-        print(error)
-    sys.exit(1)
 
 # Parse QSS
 parser.parse(qss)
@@ -276,11 +479,46 @@ button.setObjectName("myButton")
 styles = parser.get_styles_for(button, include_class_if_object_name=True)
 button.setStyleSheet(styles)
 
+# Print formatted QSS
+formatted_qss = parser.to_string()
+print("Formatted QSS:")
+print(formatted_qss)
+
 # Show button
 button.show()
 
 # Run application
 sys.exit(app.exec_())
+```
+
+**Example `styles.qss`**:
+
+```qss
+QPushButton {
+    background: blue;
+}
+#myButton {
+    color: red;
+}
+QPushButton:hover {
+    background: yellow;
+}
+```
+
+**Output**:
+
+```
+Parsing completed
+Formatted QSS:
+QPushButton {
+    background: blue;
+}
+#myButton {
+    color: red;
+}
+QPushButton:hover {
+    background: yellow;
+}
 ```
 
 ## API Reference
@@ -290,7 +528,6 @@ sys.exit(app.exec_())
 Main class for parsing and managing QSS.
 
 - **Methods**:
-  - `check_format(qss_text: str) -> List[str]`: Validates QSS syntax, returning error messages.
   - `parse(qss_text: str) -> None`: Parses QSS into `QSSRule` objects.
   - `get_styles_for(widget: WidgetProtocol, fallback_class: Optional[str] = None, additional_selectors: Optional[List[str]] = None, include_class_if_object_name: bool = False) -> str`: Retrieves QSS styles for a widget.
   - `on(event: ParserEvent, handler: Callable[..., None]) -> None`: Registers handlers for events (`rule_added`, `error_found`, `variable_defined`, `parse_completed`).
